@@ -364,7 +364,8 @@ class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObse
           height: 1.15,
         );
 
-    final useOpaqueBackground = !widget.usesLiveHomeTheme;
+    final useOpaqueBackground =
+        !widget.usesLiveHomeTheme && !widget.preset.isGradient;
 
     return Scaffold(
       backgroundColor: useOpaqueBackground
@@ -458,17 +459,23 @@ class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObse
                         ),
                       ),
                     ),
-                    RoundOutlinedIconButton(
-                      tooltip: 'Share this month',
-                      onPressed: () => showShareMonthSheet(
-                        context,
-                        month: _focusedMonth,
-                      ),
-                      icon: Icons.share_rounded,
-                    ),
-                    RoundOutlinedIconButton(
-                      onPressed: _nextMonth,
-                      icon: Icons.chevron_right,
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        RoundOutlinedIconButton(
+                          tooltip: 'Share this month',
+                          onPressed: () => showShareMonthSheet(
+                            context,
+                            month: _focusedMonth,
+                          ),
+                          icon: Icons.share_rounded,
+                        ),
+                        const SizedBox(width: 8),
+                        RoundOutlinedIconButton(
+                          onPressed: _nextMonth,
+                          icon: Icons.chevron_right,
+                        ),
+                      ],
                     ),
                   ],
                 ),

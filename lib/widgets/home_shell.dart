@@ -4,6 +4,7 @@ import '../screens/calendar_screen.dart';
 import '../state/appearance_controller.dart';
 import '../theme/app_theme.dart';
 import 'calendar_ambient_backdrop.dart';
+import 'palette_gradient_backdrop.dart';
 import 'settings_sheet.dart';
 
 /// Calendar home with settings as an overlay (never replaces the home route).
@@ -58,8 +59,10 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final appearance = widget.appearance;
-    final usesLive = appearance.usesLiveHomeTheme;
     final preset = appearance.effectivePreset;
+    final usesLive = appearance.usesLiveHomeTheme;
+    final usesGradientPalette =
+        appearance.usesPaletteTheme && preset.isGradient;
     final theme = AppTheme.resolve(
       preset: preset,
       violetDarkMode: widget.violetDarkMode,
@@ -89,12 +92,18 @@ class _HomeShellState extends State<HomeShell> {
                 appearance.customBackgroundPath != null,
             child: calendar,
           )
-        : calendar;
+        : usesGradientPalette
+            ? PaletteGradientBackdrop(preset: preset, child: calendar)
+            : calendar;
+
+    final chromeBackground = usesLive || usesGradientPalette
+        ? Colors.transparent
+        : theme.scaffoldBackgroundColor;
 
     final homeContent = KeyedSubtree(
       key: ValueKey('home-reload-$_homeReloadKey'),
       child: Material(
-        color: theme.scaffoldBackgroundColor,
+        color: chromeBackground,
         child: calendarTree,
       ),
     );
@@ -102,7 +111,7 @@ class _HomeShellState extends State<HomeShell> {
     return Theme(
       data: theme,
       child: ColoredBox(
-        color: theme.scaffoldBackgroundColor,
+        color: chromeBackground,
         child: Stack(
           fit: StackFit.expand,
           children: [

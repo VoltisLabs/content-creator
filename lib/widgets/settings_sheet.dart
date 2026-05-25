@@ -386,13 +386,6 @@ class _SettingsHomePageState extends State<_SettingsHomePage> {
           ],
           const Divider(height: 24),
           _navTile(
-            icon: Icons.info_outline_rounded,
-            title: 'About',
-            subtitle: 'Version ${AppVersion.label}',
-            onTap: widget.onOpenAbout,
-          ),
-          const Divider(height: 1),
-          _navTile(
             icon: Icons.help_outline_rounded,
             title: 'Help and support',
             subtitle: 'Guides and contact Voltis Labs',
@@ -413,6 +406,13 @@ class _SettingsHomePageState extends State<_SettingsHomePage> {
                 ? 'Restore Pro from the App Store'
                 : 'Available in the iOS app',
             onTap: _restorePurchases,
+          ),
+          const Divider(height: 1),
+          _navTile(
+            icon: Icons.info_outline_rounded,
+            title: 'About',
+            subtitle: 'Version ${AppVersion.label}',
+            onTap: widget.onOpenAbout,
           ),
           if (!isPro) ...[
             const Divider(height: 24),
@@ -524,14 +524,18 @@ class _SettingsAppearancePage extends StatelessWidget {
   }
 
   Widget _liveThemeGrid(BuildContext context, CalendarAmbientMode? selected) {
+    final desktop = isDesktop || MediaQuery.sizeOf(context).width >= 720;
+    final crossAxisCount = desktop ? 4 : 2;
+    const tileHeight = 76.0;
+
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: crossAxisCount,
         mainAxisSpacing: 8,
         crossAxisSpacing: 8,
-        childAspectRatio: 1.35,
+        mainAxisExtent: tileHeight,
       ),
       itemCount: CalendarAmbientMode.values.length,
       itemBuilder: (context, index) {
