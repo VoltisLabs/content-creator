@@ -1,0 +1,11 @@
+{
+  "name": "Content Calendar",
+  "bundle_id": "com.calendar.content",
+  "team_id": "94QA2FVSW2",
+  "asc_provider_public_id": "76ab0bd9-90a9-4df5-ab29-e80f06841bb6",
+  "sku": "CONT001",
+  "asc_app_numeric_id": "6772790980",
+  "pro_monthly_product_id": "com.calendar.content.pro.monthly",
+  "privacy_policy_url": "https://voltislabs.uk/legal/apps-privacy",
+  "terms_url": "https://voltislabs.uk/legal/apps-terms"
+}

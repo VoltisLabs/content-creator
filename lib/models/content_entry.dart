@@ -1,7 +1,10 @@
+import 'package:uuid/uuid.dart';
+
 import 'content_image.dart';
 
 class ContentEntry {
   const ContentEntry({
+    required this.id,
     required this.dateKey,
     this.caption = '',
     this.tags = const [],
@@ -9,6 +12,9 @@ class ContentEntry {
     this.coverImagePath,
     this.images = const [],
   });
+
+  /// Stable id for multi-post days.
+  final String id;
 
   /// yyyy-MM-dd
   final String dateKey;
@@ -26,6 +32,7 @@ class ContentEntry {
       images.isNotEmpty;
 
   ContentEntry copyWith({
+    String? id,
     String? dateKey,
     String? caption,
     List<String>? tags,
@@ -35,6 +42,7 @@ class ContentEntry {
     List<ContentImage>? images,
   }) {
     return ContentEntry(
+      id: id ?? this.id,
       dateKey: dateKey ?? this.dateKey,
       caption: caption ?? this.caption,
       tags: tags ?? this.tags,
@@ -44,7 +52,15 @@ class ContentEntry {
     );
   }
 
+  factory ContentEntry.create({required String dateKey}) {
+    return ContentEntry(
+      id: const Uuid().v4(),
+      dateKey: dateKey,
+    );
+  }
+
   Map<String, dynamic> toJson() => {
+        'id': id,
         'dateKey': dateKey,
         'caption': caption,
         'tags': tags,
@@ -55,6 +71,7 @@ class ContentEntry {
 
   factory ContentEntry.fromJson(Map<String, dynamic> json) {
     return ContentEntry(
+      id: json['id'] as String? ?? const Uuid().v4(),
       dateKey: json['dateKey'] as String,
       caption: json['caption'] as String? ?? '',
       tags: (json['tags'] as List<dynamic>? ?? []).cast<String>(),

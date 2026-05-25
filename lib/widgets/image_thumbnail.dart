@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../utils/app_haptics.dart';
+
 /// Small image tile with remove control: always visible on mobile, hover-only on desktop.
 class ImageThumbnail extends StatefulWidget {
   const ImageThumbnail({
@@ -43,17 +45,22 @@ class _ImageThumbnailState extends State<ImageThumbnail> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final accent = theme.colorScheme.primary;
     final borderColor = widget.selected
-        ? theme.colorScheme.primary
-        : theme.colorScheme.outline.withValues(alpha: 0.35);
+        ? accent
+        : accent.withValues(alpha: 0.28);
     final borderWidth = widget.selected ? 2.0 : 1.0;
     final imageSize = widget.size - (borderWidth * 2);
+    final fill = accent.withValues(alpha: 0.06);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovering = true),
       onExit: (_) => setState(() => _hovering = false),
       child: GestureDetector(
-        onTap: widget.onTap,
+        onTap: () {
+          AppHaptics.tap();
+          widget.onTap?.call();
+        },
         child: SizedBox(
           width: widget.size,
           height: widget.size,
@@ -61,6 +68,7 @@ class _ImageThumbnailState extends State<ImageThumbnail> {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: borderColor, width: borderWidth),
+              color: fill,
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(7),
@@ -74,6 +82,12 @@ class _ImageThumbnailState extends State<ImageThumbnail> {
                     height: imageSize,
                     fit: BoxFit.cover,
                     cacheWidth: (widget.size * 2).toInt(),
+                    color: accent.withValues(alpha: 0.08),
+                    colorBlendMode: BlendMode.softLight,
+                    errorBuilder: (context, error, stackTrace) => Icon(
+                      Icons.broken_image_outlined,
+                      color: accent.withValues(alpha: 0.45),
+                    ),
                   ),
                   Positioned(
                     top: 2,
@@ -88,7 +102,10 @@ class _ImageThumbnailState extends State<ImageThumbnail> {
                           shape: const CircleBorder(),
                           clipBehavior: Clip.antiAlias,
                           child: InkWell(
-                            onTap: widget.onRemove,
+                            onTap: () {
+                              AppHaptics.tap();
+                              widget.onRemove();
+                            },
                             child: const SizedBox(
                               width: 20,
                               height: 20,

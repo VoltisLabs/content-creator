@@ -1,0 +1,74 @@
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../theme/app_theme_preset.dart';
+import '../theme/calendar_ambient_mode.dart';
+import '../theme/home_theme_kind.dart';
+
+class AppearancePreferences {
+  AppearancePreferences._();
+
+  static const _kindKey = 'home_theme_kind';
+  static const _presetKey = 'app_theme_preset';
+  static const _ambientKey = 'calendar_ambient_mode';
+  static const _customBgKey = 'custom_background_path';
+  static const _useCustomBgKey = 'use_custom_background';
+
+  static Future<HomeThemeKind> loadKind({required AppThemePreset preset}) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_kindKey);
+    if (raw == HomeThemeKind.live.name) return HomeThemeKind.live;
+    if (raw == HomeThemeKind.palette.name) return HomeThemeKind.palette;
+    // Migrate installs that stored both palette + live at once.
+    if (preset.isGradient) return HomeThemeKind.palette;
+    return HomeThemeKind.live;
+  }
+
+  static Future<void> saveKind(HomeThemeKind kind) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kindKey, kind.name);
+  }
+
+  static Future<AppThemePreset> loadPreset() async {
+    final prefs = await SharedPreferences.getInstance();
+    return AppThemePreset.fromStorage(prefs.getString(_presetKey));
+  }
+
+  static Future<void> savePreset(AppThemePreset preset) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_presetKey, preset.storageName);
+  }
+
+  static Future<CalendarAmbientMode> loadAmbient() async {
+    final prefs = await SharedPreferences.getInstance();
+    return CalendarAmbientMode.fromStorage(prefs.getString(_ambientKey));
+  }
+
+  static Future<void> saveAmbient(CalendarAmbientMode mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_ambientKey, mode.name);
+  }
+
+  static Future<String?> loadCustomBackgroundPath() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_customBgKey);
+  }
+
+  static Future<void> saveCustomBackgroundPath(String? path) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (path == null || path.isEmpty) {
+      await prefs.remove(_customBgKey);
+    } else {
+      await prefs.setString(_customBgKey, path);
+    }
+  }
+
+  static Future<bool> loadUseCustomBackground() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_useCustomBgKey) ?? false;
+  }
+
+  static Future<void> saveUseCustomBackground(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_useCustomBgKey, value);
+  }
+}

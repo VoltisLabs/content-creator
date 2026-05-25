@@ -1,20 +1,25 @@
-import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/content_entry.dart';
 import '../models/content_image.dart';
+import '../services/image_pick_service.dart';
+import '../services/plan_service.dart';
 import '../services/storage_service.dart';
+import '../utils/app_haptics.dart';
+import '../widgets/haptic_buttons.dart';
 import '../widgets/image_thumbnail.dart';
+import '../widgets/paywall_sheet.dart';
+import '../widgets/share_sheet.dart';
 
 class ContentDetailScreen extends StatefulWidget {
   const ContentDetailScreen({
     super.key,
     required this.date,
-    required this.initialEntry,
+    this.initialEntry,
     this.onEntryChanged,
   });
 
@@ -31,10 +36,10 @@ class _ContentDetailScreenState extends State<ContentDetailScreen> {
   final _altController = TextEditingController();
   final _tagController = TextEditingController();
   final _imageAltController = TextEditingController();
-  final _picker = ImagePicker();
   final _storage = StorageService.instance;
 
   late String _dateKey;
+  late String _entryId;
   String? _coverPath;
   List<ContentImage> _images = [];
   List<String> _tags = [];
@@ -47,22 +52,39 @@ class _ContentDetailScreenState extends State<ContentDetailScreen> {
   void initState() {
     super.initState();
     _dateKey = DateFormat('yyyy-MM-dd').format(widget.date);
-    final entry = widget.initialEntry;
-    if (entry != null) {
-      _captionController.text = entry.caption;
-      _altController.text = entry.altDescription;
-      _coverPath = entry.coverImagePath;
-      _images = List.from(entry.images);
-      _tags = List.from(entry.tags);
-      if (_images.isNotEmpty) {
-        _selectedImageIndex = 0;
-        _imageAltController.text = _images.first.altDescription;
-      }
+    final entry = widget.initialEntry ?? ContentEntry.create(dateKey: _dateKey);
+    _entryId = entry.id;
+    _captionController.text = entry.caption;
+    _altController.text = entry.altDescription;
+    _coverPath = _storage.resolveImagePath(entry.coverImagePath);
+    _images = [
+      for (final image in entry.images)
+        if (_storage.resolveImagePath(image.path) case final resolved?)
+          image.copyWith(path: resolved),
+    ];
+    _tags = List.from(entry.tags);
+    if (_images.isNotEmpty) {
+      _selectedImageIndex = 0;
+      _imageAltController.text = _images.first.altDescription;
     }
+    _captionController.addListener(_schedulePersist);
+    _altController.addListener(_schedulePersist);
   }
+
+  void _schedulePersist() {
+    _persistDebounce?.cancel();
+    _persistDebounce = Timer(const Duration(milliseconds: 400), () {
+      _persistAndNotify();
+    });
+  }
+
+  Timer? _persistDebounce;
 
   @override
   void dispose() {
+    _persistDebounce?.cancel();
+    _captionController.removeListener(_schedulePersist);
+    _altController.removeListener(_schedulePersist);
     _captionController.dispose();
     _altController.dispose();
     _tagController.dispose();
@@ -72,6 +94,7 @@ class _ContentDetailScreenState extends State<ContentDetailScreen> {
 
   ContentEntry _buildEntry() {
     return ContentEntry(
+      id: _entryId,
       dateKey: _dateKey,
       caption: _captionController.text.trim(),
       tags: _tags,
@@ -81,14 +104,28 @@ class _ContentDetailScreenState extends State<ContentDetailScreen> {
     );
   }
 
+  Future<bool> _withinPlanLimits() async {
+    final entry = _buildEntry();
+    if (!entry.hasContent) return true;
+    final message = await PlanService.instance.limitMessageForNewPost(
+      dateKey: _dateKey,
+      existingEntryId: widget.initialEntry?.id ?? _entryId,
+    );
+    if (message == null) return true;
+    if (!mounted) return false;
+    await showPaywallSheet(context, feature: message);
+    return false;
+  }
+
   Future<void> _persistAndNotify() async {
+    if (!await _withinPlanLimits()) return;
     final entry = _buildEntry();
     await _storage.saveEntry(entry);
     widget.onEntryChanged?.call(entry.hasContent ? entry : null);
   }
 
   Future<void> _pickCover() async {
-    final file = await _pickSingleImageFile();
+    final file = await ImagePickService.pickSingleImage();
     if (file == null || !mounted) return;
     final path = await _storage.importImage(file);
     setState(() => _coverPath = path);
@@ -96,7 +133,7 @@ class _ContentDetailScreenState extends State<ContentDetailScreen> {
   }
 
   Future<void> _addImages() async {
-    final files = await _pickMultipleImageFiles();
+    final files = await ImagePickService.pickMultipleImages();
     if (files.isEmpty || !mounted) return;
 
     final imported = <ContentImage>[];
@@ -118,17 +155,6 @@ class _ContentDetailScreenState extends State<ContentDetailScreen> {
     await _persistAndNotify();
   }
 
-  Future<File?> _pickSingleImageFile() async {
-    final result = await _picker.pickImage(source: ImageSource.gallery);
-    if (result == null) return null;
-    return File(result.path);
-  }
-
-  Future<List<File>> _pickMultipleImageFiles() async {
-    final results = await _picker.pickMultiImage();
-    return results.map((r) => File(r.path)).toList();
-  }
-
   void _addTag() {
     final tag = _tagController.text.trim();
     if (tag.isEmpty || _tags.contains(tag)) return;
@@ -136,10 +162,12 @@ class _ContentDetailScreenState extends State<ContentDetailScreen> {
       _tags = [..._tags, tag];
       _tagController.clear();
     });
+    _persistAndNotify();
   }
 
   void _removeTag(String tag) {
     setState(() => _tags = _tags.where((t) => t != tag).toList());
+    _persistAndNotify();
   }
 
   void _selectImage(int index) {
@@ -180,12 +208,14 @@ class _ContentDetailScreenState extends State<ContentDetailScreen> {
   }
 
   Future<void> _removeCover() async {
+    if (_coverPath == null) return;
     await _storage.deleteImageFile(_coverPath);
     setState(() => _coverPath = null);
     await _persistAndNotify();
   }
 
   Future<void> _save() async {
+    if (!await _withinPlanLimits()) return;
     setState(() => _saving = true);
     final entry = _buildEntry();
     await _storage.saveEntry(entry);
@@ -205,12 +235,32 @@ class _ContentDetailScreenState extends State<ContentDetailScreen> {
     final formattedDate = DateFormat('EEEE, MMMM d, yyyy').format(widget.date);
     final theme = Theme.of(context);
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _persistDebounce?.cancel();
+        _persistAndNotify().then((_) {
+          if (!context.mounted) return;
+          final entry = _buildEntry();
+          Navigator.of(context).pop(entry.hasContent ? entry : null);
+        });
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: Text(formattedDate, overflow: TextOverflow.ellipsis),
         actions: [
+          HapticIconButton(
+            tooltip: 'Share',
+            onPressed: () => showShareSheet(
+              context,
+              date: widget.date,
+              postCaption: _captionController.text.trim(),
+            ),
+            icon: Icons.share_outlined,
+          ),
           TextButton.icon(
-            onPressed: _saving ? null : _save,
+            onPressed: AppHaptics.wrap(_saving ? null : _save),
             icon: _saving
                 ? const SizedBox(
                     width: 16,
@@ -222,7 +272,7 @@ class _ContentDetailScreenState extends State<ContentDetailScreen> {
           ),
         ],
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -262,7 +312,10 @@ class _ContentDetailScreenState extends State<ContentDetailScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                FilledButton(onPressed: _addTag, child: const Text('Add')),
+                HapticFilledButton(
+                  onPressed: _addTag,
+                  child: const Text('Add'),
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -286,7 +339,10 @@ class _ContentDetailScreenState extends State<ContentDetailScreen> {
                         final tag = _tags[index];
                         return InputChip(
                           label: Text(tag),
-                          onDeleted: () => _removeTag(tag),
+                          onDeleted: () {
+                            AppHaptics.tap();
+                            _removeTag(tag);
+                          },
                           visualDensity: VisualDensity.compact,
                         );
                       },
@@ -304,22 +360,7 @@ class _ContentDetailScreenState extends State<ContentDetailScreen> {
               ),
             ),
             const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: _sectionTitle(
-                    context,
-                    'Images',
-                    Icons.photo_library_outlined,
-                  ),
-                ),
-                FilledButton.tonalIcon(
-                  onPressed: _addImages,
-                  icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
-                  label: const Text('Add'),
-                ),
-              ],
-            ),
+            _sectionTitle(context, 'Images', Icons.photo_library_outlined),
             const SizedBox(height: 8),
             SizedBox(
               height: _thumbSize,
@@ -327,24 +368,20 @@ class _ContentDetailScreenState extends State<ContentDetailScreen> {
                 scrollDirection: Axis.horizontal,
                 primary: false,
                 shrinkWrap: true,
-                itemCount: _images.isEmpty ? 1 : _images.length,
+                itemCount: _images.isEmpty ? 1 : _images.length + 1,
                 separatorBuilder: (context, index) => const SizedBox(width: 8),
                 itemBuilder: (context, index) {
                   if (_images.isEmpty) {
-                    return Container(
-                      width: _thumbSize,
-                      height: _thumbSize,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: theme.colorScheme.outline.withValues(alpha: 0.35),
-                        ),
-                      ),
-                      child: Icon(
-                        Icons.photo_outlined,
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.35),
-                      ),
+                    return _AddImageTile(
+                      size: _thumbSize,
+                      onTap: _addImages,
+                    );
+                  }
+
+                  if (index == _images.length) {
+                    return _AddImageTile(
+                      size: _thumbSize,
+                      onTap: _addImages,
                     );
                   }
 
@@ -375,7 +412,7 @@ class _ContentDetailScreenState extends State<ContentDetailScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  TextButton(
+                  HapticTextButton(
                     onPressed: () => _useImageAsCover(_selectedImageIndex!),
                     child: const Text('Set as cover'),
                   ),
@@ -385,6 +422,7 @@ class _ContentDetailScreenState extends State<ContentDetailScreen> {
           ],
         ),
       ),
+    ),
     );
   }
 
@@ -421,29 +459,40 @@ class _CoverRow extends StatelessWidget {
 
     return Row(
       children: [
-        if (coverPath != null)
-          ImageThumbnail(
-            path: coverPath!,
-            size: 72,
-            onRemove: onRemove ?? () {},
-          )
-        else
-          Container(
-            width: 72,
-            height: 72,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              color: theme.colorScheme.surfaceContainerHighest,
-              border: Border.all(
-                color: theme.colorScheme.outline.withValues(alpha: 0.35),
-              ),
-            ),
-            child: Icon(
-              Icons.image_outlined,
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
-            ),
-          ),
+        GestureDetector(
+          onTap: () {
+            AppHaptics.tap();
+            onPick();
+          },
+          child: coverPath != null
+              ? ImageThumbnail(
+                  path: coverPath!,
+                  size: 72,
+                  onTap: onPick,
+                  onRemove: onRemove ?? () {},
+                )
+              : Container(
+                  width: 72,
+                  height: 72,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    border: Border.all(
+                      color: theme.colorScheme.outline.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.image_outlined,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                  ),
+                ),
+        ),
+        const SizedBox(width: 12),
+        FilledButton.tonal(
+          onPressed: AppHaptics.wrap(onPick),
+          child: Text(coverPath == null ? 'Choose' : 'Change'),
+        ),
         const SizedBox(width: 12),
         Expanded(
           child: Text(
@@ -453,11 +502,44 @@ class _CoverRow extends StatelessWidget {
             ),
           ),
         ),
-        FilledButton.tonal(
-          onPressed: onPick,
-          child: Text(coverPath == null ? 'Choose' : 'Change'),
-        ),
       ],
+    );
+  }
+}
+
+class _AddImageTile extends StatelessWidget {
+  const _AddImageTile({
+    required this.size,
+    required this.onTap,
+  });
+
+  final double size;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surfaceContainerHighest,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(
+          color: theme.colorScheme.outline.withValues(alpha: 0.35),
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: HapticInkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(
+          width: size,
+          height: size,
+          child: Icon(
+            Icons.add_photo_alternate_outlined,
+            color: theme.colorScheme.primary,
+          ),
+        ),
+      ),
     );
   }
 }

@@ -1,68 +1,174 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/content_entry.dart';
+import '../services/app_preferences.dart';
+import '../services/plan_service.dart';
+import '../services/slider_sound.dart';
+import '../utils/app_haptics.dart';
 import '../services/storage_service.dart';
+import '../theme/app_theme_preset.dart';
+import '../theme/calendar_ambient_mode.dart';
+import '../widgets/paywall_sheet.dart';
+import '../widgets/calendar_nav_picker.dart';
 import '../widgets/calendar_cell.dart';
-import 'content_detail_screen.dart';
+import '../widgets/haptic_buttons.dart';
+import '../widgets/import_link_sheet.dart';
+import '../widgets/mobile_calendar_dock.dart';
+import '../widgets/share_sheet.dart';
+import 'day_posts_screen.dart';
 
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({
     super.key,
-    required this.onToggleTheme,
+    required this.preset,
+    required this.usesLiveHomeTheme,
+    required this.violetDarkMode,
+    required this.onToggleVioletBrightness,
+    required this.onPresetChanged,
+    required this.ambientMode,
+    required this.onAmbientChanged,
+    required this.useCustomBackground,
+    required this.onUseCustomBackgroundChanged,
+    required this.onCustomBackgroundChanged,
+    required this.stayOnTop,
+    required this.onStayOnTopChanged,
+    required this.onOpenSettings,
   });
 
-  final VoidCallback onToggleTheme;
+  final AppThemePreset preset;
+  final bool usesLiveHomeTheme;
+  final bool violetDarkMode;
+  final VoidCallback onToggleVioletBrightness;
+  final ValueChanged<AppThemePreset> onPresetChanged;
+  final CalendarAmbientMode ambientMode;
+  final ValueChanged<CalendarAmbientMode> onAmbientChanged;
+  final bool useCustomBackground;
+  final ValueChanged<bool> onUseCustomBackgroundChanged;
+  final VoidCallback onCustomBackgroundChanged;
+  final bool stayOnTop;
+  final ValueChanged<bool> onStayOnTopChanged;
+  final VoidCallback onOpenSettings;
 
   @override
   State<CalendarScreen> createState() => _CalendarScreenState();
 }
 
-class _CalendarScreenState extends State<CalendarScreen> {
+class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObserver {
   final _storage = StorageService.instance;
   late DateTime _focusedMonth;
-  Map<String, ContentEntry> _entries = {};
-  double _gridScale = 0.5;
+  Map<String, List<ContentEntry>> _entriesByDate = {};
+  double _gridScale = AppPreferences.defaultGridScale;
+  bool _showMobileSlider = false;
 
   static const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     final now = DateTime.now();
     _focusedMonth = DateTime(now.year, now.month);
+    _loadEntries();
+    _loadGridScale();
+  }
+
+  Future<void> _loadGridScale() async {
+    final scale = await AppPreferences.gridScale();
+    if (!mounted) return;
+    setState(() => _gridScale = scale);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _reloadEntries();
+    }
+  }
+
+  Future<void> _reloadEntries() async {
+    await _storage.reloadFromDisk();
+    if (!mounted) return;
     _loadEntries();
   }
 
   void _loadEntries() {
-    setState(() => _entries = Map.from(_storage.entries));
+    setState(() => _entriesByDate = Map.from(_storage.entriesByDate));
   }
 
-  void _applyEntry(String dateKey, ContentEntry? entry) {
-    setState(() {
-      if (entry != null) {
-        _entries[dateKey] = entry;
-      } else {
-        _entries.remove(dateKey);
-      }
-    });
+  Future<bool> _ensureMonthAllowed(DateTime month) async {
+    if (await PlanService.instance.isPro) return true;
+    if (PlanLimits.isMonthAllowedForFree(month)) return true;
+    if (!mounted) return false;
+    await showPaywallSheet(
+      context,
+      feature: PlanLimits.freeMonthWindowMessage,
+    );
+    return false;
   }
 
-  void _previousMonth() {
-    setState(() {
-      _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month - 1);
-    });
+  Future<void> _previousMonth() async {
+    final target = DateTime(_focusedMonth.year, _focusedMonth.month - 1);
+    if (!await _ensureMonthAllowed(target)) return;
+    setState(() => _focusedMonth = target);
   }
 
-  void _nextMonth() {
-    setState(() {
-      _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1);
-    });
+  Future<void> _nextMonth() async {
+    final target = DateTime(_focusedMonth.year, _focusedMonth.month + 1);
+    if (!await _ensureMonthAllowed(target)) return;
+    setState(() => _focusedMonth = target);
   }
 
   void _goToToday() {
     final now = DateTime.now();
     setState(() => _focusedMonth = DateTime(now.year, now.month));
+  }
+
+  Future<void> _openMonthPicker() {
+    return showCalendarNavPicker(
+      context,
+      initialMonth: _focusedMonth,
+      entriesByDate: _entriesByDate,
+      monthAllowed: (month) async {
+        if (await PlanService.instance.isPro) return true;
+        return PlanLimits.isMonthAllowedForFree(month);
+      },
+      onMonthSelected: (month) async {
+        if (!await _ensureMonthAllowed(month)) return;
+        setState(() => _focusedMonth = month);
+      },
+    );
+  }
+
+  void _openSettings() => widget.onOpenSettings();
+
+  Widget _settingsButton() {
+    return HapticIconButton(
+      tooltip: 'Settings',
+      onPressed: _openSettings,
+      icon: Icons.settings_rounded,
+    );
+  }
+
+  bool get _isDesktopLayout => MediaQuery.sizeOf(context).width >= 720;
+
+  void _onGridScaleChanged(double value) {
+    final desktop = _isDesktopLayout;
+    final previousColumns = columnCountForScale(_gridScale, desktop: desktop);
+    final nextColumns = columnCountForScale(value, desktop: desktop);
+    setState(() => _gridScale = value);
+    unawaited(AppPreferences.setGridScale(value));
+    if (previousColumns != nextColumns) {
+      SliderSound.playColumnStep();
+    }
   }
 
   List<DateTime?> _buildMonthGrid() {
@@ -85,24 +191,159 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Future<void> _openDay(DateTime date) async {
-    final dateKey = DateFormat('yyyy-MM-dd').format(date);
-    final result = await Navigator.push<ContentEntry?>(
+    await Navigator.push<void>(
       context,
       MaterialPageRoute(
-        builder: (_) => ContentDetailScreen(
+        builder: (_) => DayPostsScreen(
           date: date,
-          initialEntry: _entries[dateKey] ?? _storage.getEntry(dateKey),
-          onEntryChanged: (entry) => _applyEntry(dateKey, entry),
+          onChanged: _loadEntries,
         ),
       ),
     );
     if (!mounted) return;
     _loadEntries();
-    if (result != null) {
-      _applyEntry(dateKey, result);
-    } else if (_storage.getEntry(dateKey) == null) {
-      _applyEntry(dateKey, null);
+  }
+
+  int _postCountThisMonth() {
+    var count = 0;
+    for (final entry in _entriesByDate.entries) {
+      if (_isSameMonth(entry.key)) {
+        count += entry.value.length;
+      }
     }
+    return count;
+  }
+
+  ContentEntry? _primaryPost(List<ContentEntry> posts) {
+    if (posts.isEmpty) return null;
+    for (final post in posts) {
+      if (post.coverImagePath != null) return post;
+    }
+    return posts.first;
+  }
+
+  void _handleImportedDay(String dateKey) {
+    _loadEntries();
+    final parts = dateKey.split('-');
+    if (parts.length != 3) return;
+    setState(() {
+      _focusedMonth = DateTime(
+        int.parse(parts[0]),
+        int.parse(parts[1]),
+      );
+    });
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Imported posts for ${DateFormat('MMM d, yyyy').format(DateTime.parse(dateKey))}')),
+    );
+  }
+
+  bool get _isMobile => MediaQuery.sizeOf(context).width < 720;
+
+  double _gridSpacing() => 4 + (_gridScale * 10);
+
+  int _columnCount(double availableWidth) =>
+      columnCountForScale(_gridScale, desktop: _isDesktopLayout);
+
+  double _cellWidth(double availableWidth, int columns) {
+    final spacing = _gridSpacing();
+    return (availableWidth - spacing * (columns - 1)) / columns;
+  }
+
+  double _cellHeight(double cellWidth) =>
+      cellWidth * (1.1 - (_gridScale * 0.25));
+
+  bool _showWeekdayHeader(double availableWidth) {
+    if (!_isMobile) return true;
+    return _columnCount(availableWidth) >= 7;
+  }
+
+  List<DateTime?> _cellsForLayout(int columns) {
+    if (columns >= 7) return _buildMonthGrid();
+
+    final daysInMonth =
+        DateUtils.getDaysInMonth(_focusedMonth.year, _focusedMonth.month);
+    return [
+      for (var day = 1; day <= daysInMonth; day++)
+        DateTime(_focusedMonth.year, _focusedMonth.month, day),
+    ];
+  }
+
+  Widget _buildCalendarCell(DateTime date, DateTime today) {
+    final dateKey = DateFormat('yyyy-MM-dd').format(date);
+    final posts = _entriesByDate[dateKey] ?? const [];
+    final primary = _primaryPost(posts);
+    final tagCount = posts.fold<int>(
+      0,
+      (sum, post) => sum + post.tags.length,
+    );
+    final isToday = date.year == today.year &&
+        date.month == today.month &&
+        date.day == today.day;
+
+    return CalendarCell(
+      key: ValueKey('$dateKey-${primary?.coverImagePath ?? ''}-${posts.length}'),
+      preset: widget.preset,
+      day: date.day,
+      isCurrentMonth: true,
+      isToday: isToday,
+      coverPath: primary?.coverImagePath,
+      hasContent: posts.isNotEmpty,
+      postCount: posts.length,
+      tagCount: tagCount,
+      onTap: () => _openDay(date),
+    );
+  }
+
+  Widget _buildThumbnailSizeSlider(BuildContext context) {
+    final muted = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55);
+
+    return Row(
+      children: [
+        Icon(Icons.photo_size_select_small, size: 18, color: muted),
+        Expanded(
+          child: Slider(
+            value: _gridScale,
+            onChanged: _onGridScaleChanged,
+          ),
+        ),
+        Icon(Icons.photo_size_select_large, size: 22, color: muted),
+      ],
+    );
+  }
+
+  Widget _buildFluidGrid(List<DateTime?> cells, DateTime today) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth;
+        final columns = _columnCount(availableWidth);
+        final gridSpacing = _gridSpacing();
+        final cellWidth = _cellWidth(availableWidth, columns);
+        final cellHeight = _cellHeight(cellWidth);
+        final layoutCells = _cellsForLayout(columns);
+
+        final dockInset = _isMobile ? MobileCalendarDock.dockHeight + 32 : 0.0;
+
+        return GridView.builder(
+          padding: EdgeInsets.only(bottom: dockInset),
+          physics: const BouncingScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: columns,
+            mainAxisSpacing: gridSpacing,
+            crossAxisSpacing: gridSpacing,
+            mainAxisExtent: cellHeight,
+          ),
+          itemCount: layoutCells.length,
+          itemBuilder: (context, index) {
+            final date = layoutCells[index];
+            if (date == null) {
+              return const SizedBox.shrink();
+            }
+            return _buildCalendarCell(date, today);
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -110,149 +351,186 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final monthLabel = DateFormat('MMMM yyyy').format(_focusedMonth);
     final today = DateTime.now();
     final cells = _buildMonthGrid();
-    final filledCount =
-        _entries.values.where((e) => _isSameMonth(e.dateKey)).length;
+    final postCount = _postCountThisMonth();
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final gridSpacing = 4 + (_gridScale * 10);
-    final gridAspectRatio = 1.15 - (_gridScale * 0.55);
+    final bodyPadding = 40.0;
+    final gridWidth = MediaQuery.sizeOf(context).width - bodyPadding;
+    final showWeekdays = _showWeekdayHeader(gridWidth);
+    final isMobile = _isMobile;
+
+    final titleStyle = Theme.of(context).textTheme.titleLarge?.copyWith(
+          fontWeight: FontWeight.w700,
+          fontSize: isMobile ? 22 : null,
+          height: 1.15,
+        );
+
+    final useOpaqueBackground = !widget.usesLiveHomeTheme;
 
     return Scaffold(
+      backgroundColor: useOpaqueBackground
+          ? Theme.of(context).scaffoldBackgroundColor
+          : Colors.transparent,
+      extendBody: isMobile && !useOpaqueBackground,
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Content Calendar'),
-            Text(
-              '$filledCount posts this month',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withValues(alpha: 0.55),
-                  ),
-            ),
-          ],
+        titleSpacing: isMobile ? 20 : null,
+        title: Text(
+          'Content Calendar',
+          style: titleStyle,
         ),
         actions: [
-          IconButton(
-            tooltip: isDark ? 'Light mode' : 'Dark mode',
-            onPressed: widget.onToggleTheme,
-            icon: Icon(isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined),
-          ),
-          TextButton(
+          if (!isMobile) ...[
+            SizedBox(
+              width: 168,
+              child: _buildThumbnailSizeSlider(context),
+            ),
+            HapticIconButton(
+              tooltip: 'Import shared link',
+              onPressed: () => showImportLinkSheet(
+                context,
+                onImported: _handleImportedDay,
+              ),
+              icon: Icons.add_link_rounded,
+            ),
+            if (widget.preset == AppThemePreset.violet)
+              HapticIconButton(
+                tooltip: isDark ? 'Violet light' : 'Violet dark',
+                onPressed: widget.onToggleVioletBrightness,
+                icon: isDark ? Icons.wb_sunny_rounded : Icons.nights_stay_rounded,
+              ),
+          ],
+          _settingsButton(),
+          HapticTextButton(
             onPressed: _goToToday,
             child: const Text('Today'),
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            Row(
+      body: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+            child: Column(
               children: [
-                Icon(
-                  Icons.photo_size_select_small,
-                  size: 18,
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.55),
-                ),
-                Expanded(
-                  child: Slider(
-                    value: _gridScale,
-                    onChanged: (value) => setState(() => _gridScale = value),
-                  ),
-                ),
-                Icon(
-                  Icons.photo_size_select_large,
-                  size: 22,
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.55),
-                ),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                IconButton.outlined(
-                  onPressed: _previousMonth,
-                  icon: const Icon(Icons.chevron_left),
-                ),
-                Text(
-                  monthLabel,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
-                IconButton.outlined(
-                  onPressed: _nextMonth,
-                  icon: const Icon(Icons.chevron_right),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: _weekdays
-                  .map(
-                    (day) => Expanded(
-                      child: Center(
-                        child: Text(
-                          day,
-                          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurface
-                                    .withValues(alpha: 0.55),
-                                fontWeight: FontWeight.w600,
-                              ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    RoundOutlinedIconButton(
+                      onPressed: _previousMonth,
+                      icon: Icons.chevron_left,
+                    ),
+                    Expanded(
+                      child: Material(
+                        color: Colors.transparent,
+                        child: HapticInkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: _openMonthPicker,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: Column(
+                              children: [
+                                Text(
+                                  monthLabel,
+                                  textAlign: TextAlign.center,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .headlineSmall
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '$postCount posts this month',
+                                  textAlign: TextAlign.center,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface
+                                            .withValues(alpha: 0.55),
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  )
-                  .toList(),
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: GridView.builder(
-                physics: const BouncingScrollPhysics(),
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 7,
-                  mainAxisSpacing: gridSpacing,
-                  crossAxisSpacing: gridSpacing,
-                  childAspectRatio: gridAspectRatio,
+                    RoundOutlinedIconButton(
+                      tooltip: 'Share this month',
+                      onPressed: () => showShareMonthSheet(
+                        context,
+                        month: _focusedMonth,
+                      ),
+                      icon: Icons.share_rounded,
+                    ),
+                    RoundOutlinedIconButton(
+                      onPressed: _nextMonth,
+                      icon: Icons.chevron_right,
+                    ),
+                  ],
                 ),
-                itemCount: cells.length,
-                itemBuilder: (context, index) {
-                  final date = cells[index];
-                  if (date == null) {
-                    return const SizedBox.shrink();
-                  }
-
-                  final dateKey = DateFormat('yyyy-MM-dd').format(date);
-                  final entry = _entries[dateKey];
-                  final isToday = date.year == today.year &&
-                      date.month == today.month &&
-                      date.day == today.day;
-
-                  return CalendarCell(
-                    key: ValueKey('$dateKey-${entry?.coverImagePath ?? ''}'),
-                    day: date.day,
-                    isCurrentMonth: true,
-                    isToday: isToday,
-                    coverPath: entry?.coverImagePath,
-                    hasContent: entry?.hasContent ?? false,
-                    tagCount: entry?.tags.length ?? 0,
-                    onTap: () => _openDay(date),
-                  );
-                },
+                const SizedBox(height: 16),
+                if (showWeekdays) ...[
+                  Row(
+                    children: _weekdays
+                        .map(
+                          (day) => Expanded(
+                            child: Center(
+                              child: Text(
+                                day,
+                                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface
+                                          .withValues(alpha: 0.55),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                Expanded(
+                  child: _buildFluidGrid(cells, today),
+                ),
+              ],
+            ),
+          ),
+          if (isMobile)
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 16,
+              child: SafeArea(
+                top: false,
+                child: MobileCalendarDock(
+                  showSlider: _showMobileSlider,
+                  onToggleSlider: () {
+                    AppHaptics.tap();
+                    setState(() => _showMobileSlider = !_showMobileSlider);
+                  },
+                  gridScale: _gridScale,
+                  onGridScaleChanged: _onGridScaleChanged,
+                  onImportLink: () {
+                    AppHaptics.tap();
+                    showImportLinkSheet(
+                      context,
+                      onImported: _handleImportedDay,
+                    );
+                  },
+                  showThemeToggle: widget.preset == AppThemePreset.violet,
+                  isDarkTheme: isDark,
+                  onToggleTheme: widget.onToggleVioletBrightness,
+                ),
               ),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }
