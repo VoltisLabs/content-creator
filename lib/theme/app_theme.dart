@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'app_theme_preset.dart';
+import 'page_slide_transitions.dart';
 
 /// Theme tokens copied from Voltis Labs products (NotepadPro, Pinnacle).
 abstract final class AppTheme {
@@ -280,6 +281,7 @@ abstract final class AppTheme {
     final border = scheme.outline.withValues(alpha: isLight ? 0.55 : 0.65);
 
     return base.copyWith(
+      pageTransitionsTheme: slidePageTransitionsTheme,
       textTheme: textTheme,
       appBarTheme: AppBarTheme(
         elevation: 0,

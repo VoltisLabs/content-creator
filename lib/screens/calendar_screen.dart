@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/content_entry.dart';
+import '../services/calendar_import_service.dart';
 import '../services/app_preferences.dart';
 import '../services/plan_service.dart';
 import '../services/slider_sound.dart';
@@ -222,19 +223,50 @@ class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObse
     return posts.first;
   }
 
-  void _handleImportedDay(String dateKey) {
+  void _handleImportedResult(CalendarImportResult result) {
     _loadEntries();
+    final dateKey = result.dateKey;
     final parts = dateKey.split('-');
-    if (parts.length != 3) return;
-    setState(() {
-      _focusedMonth = DateTime(
+    if (parts.length == 3) {
+      setState(() {
+        _focusedMonth = DateTime(
+          int.parse(parts[0]),
+          int.parse(parts[1]),
+        );
+      });
+    } else if (parts.length == 2) {
+      setState(() {
+        _focusedMonth = DateTime(int.parse(parts[0]), int.parse(parts[1]));
+      });
+    }
+
+    if (!mounted) return;
+
+    if (result.importedDays == 1 && parts.length == 3) {
+      final day = DateTime(
         int.parse(parts[0]),
         int.parse(parts[1]),
+        int.parse(parts[2]),
       );
-    });
-    if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Imported ${result.importedCount} post${result.importedCount == 1 ? '' : 's'} for ${DateFormat('MMM d, yyyy').format(day)}',
+          ),
+        ),
+      );
+      unawaited(_openDay(day));
+      return;
+    }
+
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Imported posts for ${DateFormat('MMM d, yyyy').format(DateTime.parse(dateKey))}')),
+      SnackBar(
+        content: Text(
+          result.importedDays > 1
+              ? 'Imported ${result.importedCount} posts across ${result.importedDays} days.'
+              : 'Imported posts for ${DateFormat('MMM d, yyyy').format(DateTime.parse(dateKey))}',
+        ),
+      ),
     );
   }
 
@@ -388,7 +420,7 @@ class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObse
               tooltip: 'Import shared link',
               onPressed: () => showImportLinkSheet(
                 context,
-                onImported: _handleImportedDay,
+                onImported: _handleImportedResult,
               ),
               icon: Icons.add_link_rounded,
             ),
@@ -528,7 +560,7 @@ class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObse
                     AppHaptics.tap();
                     showImportLinkSheet(
                       context,
-                      onImported: _handleImportedDay,
+                      onImported: _handleImportedResult,
                     );
                   },
                   showThemeToggle: widget.preset == AppThemePreset.violet,

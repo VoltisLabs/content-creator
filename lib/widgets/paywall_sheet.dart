@@ -26,13 +26,20 @@ Future<bool> showPaywallScreen(
       pageBuilder: (context, animation, secondaryAnimation) =>
           _PaywallScreen(feature: feature),
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        return FadeTransition(
-          opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
-          child: child,
+        final slide = Tween<Offset>(
+          begin: const Offset(1, 0),
+          end: Offset.zero,
+        ).animate(
+          CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeInOutCubic,
+            reverseCurve: Curves.easeInOutCubic,
+          ),
         );
+        return SlideTransition(position: slide, child: child);
       },
-      transitionDuration: const Duration(milliseconds: 220),
-      reverseTransitionDuration: const Duration(milliseconds: 180),
+      transitionDuration: const Duration(milliseconds: 280),
+      reverseTransitionDuration: const Duration(milliseconds: 250),
     ),
   );
   return upgraded ?? false;
@@ -86,9 +93,16 @@ class _PaywallScreen extends StatelessWidget {
 }
 
 class PaywallSheetBody extends StatefulWidget {
-  const PaywallSheetBody({super.key, this.feature});
+  const PaywallSheetBody({
+    super.key,
+    this.feature,
+    this.embeddedInSettings = false,
+  });
 
   final String? feature;
+
+  /// When shown inside settings, do not auto-pop the nested navigator on Pro.
+  final bool embeddedInSettings;
 
   @override
   State<PaywallSheetBody> createState() => _PaywallSheetBodyState();
@@ -101,7 +115,10 @@ class _PaywallSheetBodyState extends State<PaywallSheetBody> {
   void initState() {
     super.initState();
     _subscriptions.addListener(_onSubscriptionChanged);
-    unawaited(_subscriptions.refreshStoreCatalog());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_subscriptions.refreshStoreCatalog());
+    });
   }
 
   @override
@@ -112,8 +129,8 @@ class _PaywallSheetBodyState extends State<PaywallSheetBody> {
 
   void _onSubscriptionChanged() {
     if (!mounted) return;
-    if (_subscriptions.isPro) {
-      Navigator.pop(context, true);
+    if (_subscriptions.isPro && !widget.embeddedInSettings) {
+      Navigator.of(context).pop(true);
       return;
     }
     setState(() {});

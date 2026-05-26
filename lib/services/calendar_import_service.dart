@@ -38,6 +38,7 @@ class CalendarImportService {
 
   static final _dateKeyPattern = RegExp(r'^\d{4}-\d{2}-\d{2}$');
   static final _monthKeyPattern = RegExp(r'^\d{4}-\d{2}$');
+  static const _imageConcurrency = 4;
 
   bool isShareUrl(String? text) => parseShareUri(text) != null;
 
@@ -57,6 +58,24 @@ class CalendarImportService {
     if (kind == 'day' && _dateKeyPattern.hasMatch(key)) return uri;
     if (kind == 'month' && _monthKeyPattern.hasMatch(key)) return uri;
     return null;
+  }
+
+  String? dateKeyFromUri(Uri uri) {
+    final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+    if (segments.length < 2 || segments[segments.length - 2] != 'day') {
+      return null;
+    }
+    final key = segments.last;
+    return _dateKeyPattern.hasMatch(key) ? key : null;
+  }
+
+  String? monthKeyFromUri(Uri uri) {
+    final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+    if (segments.length < 2 || segments[segments.length - 2] != 'month') {
+      return null;
+    }
+    final key = segments.last;
+    return _monthKeyPattern.hasMatch(key) ? key : null;
   }
 
   String _originFor(Uri uri) {
@@ -100,10 +119,14 @@ class CalendarImportService {
     TransferProgressCallback? onProgress,
   }) async {
     final client = HttpClient();
-    client.connectionTimeout = const Duration(seconds: 30);
+    client.connectionTimeout = const Duration(seconds: 12);
+
+    final importTempDir = Directory.systemTemp.createTempSync('content_calendar_import');
 
     try {
-      onProgress?.call(const TransferProgress(fraction: 0.02, label: 'Connecting'));
+      onProgress?.call(
+        const TransferProgress(fraction: 0.04, label: 'Downloading calendar…'),
+      );
 
       final request = await client.getUrl(uri);
       final response = await request.close();
@@ -113,13 +136,15 @@ class CalendarImportService {
         );
       }
 
-      onProgress?.call(const TransferProgress(fraction: 0.08, label: 'Downloading'));
-
       final body = await response.transform(utf8.decoder).join();
       final decoded = jsonDecode(body);
       if (decoded is! Map<String, dynamic> || decoded['ok'] != true) {
         throw CalendarImportException('That link did not return shared content.');
       }
+
+      onProgress?.call(
+        const TransferProgress(fraction: 0.1, label: 'Downloading calendar…'),
+      );
 
       final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
       final isMonth = segments[segments.length - 2] == 'month';
@@ -129,6 +154,7 @@ class CalendarImportService {
           client,
           uri,
           decoded,
+          importTempDir,
           onProgress: onProgress,
         );
       }
@@ -137,27 +163,32 @@ class CalendarImportService {
         client,
         uri,
         decoded,
+        importTempDir,
         onProgress: onProgress,
       );
     } on CalendarImportException {
       rethrow;
     } on SocketException {
       rethrow;
-    } catch (_) {
+    } catch (error) {
       throw CalendarImportException('Could not import from that link.');
     } finally {
       client.close(force: true);
+      if (importTempDir.existsSync()) {
+        await importTempDir.delete(recursive: true);
+      }
     }
   }
 
   Future<CalendarImportResult> _importDayPayload(
     HttpClient client,
     Uri uri,
-    Map<String, dynamic> decoded, {
+    Map<String, dynamic> decoded,
+    Directory importTempDir, {
     TransferProgressCallback? onProgress,
   }) async {
-    final dateKey = decoded['dateKey'] as String? ?? uri.pathSegments.last;
-    if (!_dateKeyPattern.hasMatch(dateKey)) {
+    final dateKey = decoded['dateKey'] as String? ?? dateKeyFromUri(uri);
+    if (dateKey == null || !_dateKeyPattern.hasMatch(dateKey)) {
       throw CalendarImportException('The shared link is missing a valid date.');
     }
 
@@ -172,6 +203,7 @@ class CalendarImportService {
       origin,
       dateKey,
       rawPosts,
+      importTempDir,
       onProgress: onProgress,
       progressStart: 0.12,
       progressEnd: 0.98,
@@ -196,11 +228,12 @@ class CalendarImportService {
   Future<CalendarImportResult> _importMonthPayload(
     HttpClient client,
     Uri uri,
-    Map<String, dynamic> decoded, {
+    Map<String, dynamic> decoded,
+    Directory importTempDir, {
     TransferProgressCallback? onProgress,
   }) async {
-    final monthKey = decoded['monthKey'] as String? ?? uri.pathSegments.last;
-    if (!_monthKeyPattern.hasMatch(monthKey)) {
+    final monthKey = decoded['monthKey'] as String? ?? monthKeyFromUri(uri);
+    if (monthKey == null || !_monthKeyPattern.hasMatch(monthKey)) {
       throw CalendarImportException('The shared link is missing a valid month.');
     }
 
@@ -211,7 +244,7 @@ class CalendarImportService {
 
     final origin = _originFor(uri);
     var totalPosts = 0;
-  var importedDays = 0;
+    var importedDays = 0;
     String? firstDateKey;
 
     for (var i = 0; i < days.length; i++) {
@@ -231,6 +264,7 @@ class CalendarImportService {
         origin,
         dateKey,
         rawPosts,
+        importTempDir,
         onProgress: onProgress,
         progressStart: dayStart,
         progressEnd: dayEnd,
@@ -264,7 +298,8 @@ class CalendarImportService {
     HttpClient client,
     String origin,
     String dateKey,
-    List<dynamic> rawPosts, {
+    List<dynamic> rawPosts,
+    Directory importTempDir, {
     TransferProgressCallback? onProgress,
     required double progressStart,
     required double progressEnd,
@@ -285,45 +320,79 @@ class CalendarImportService {
       }
     }
 
-    final totalImages = imageJobs.isEmpty ? 1 : imageJobs.length;
-    var downloadedImages = 0;
-    final imageCache = <String, String>{};
+    final uniqueImages = imageJobs.toSet().toList();
+    final imageCache = await _downloadImagesParallel(
+      client,
+      origin,
+      uniqueImages,
+      importTempDir,
+      onProgress: (done, total) {
+        if (total == 0) return;
+        final span = progressEnd - progressStart;
+        final fraction = progressStart + span * (done / total);
+        onProgress?.call(
+          TransferProgress(
+            fraction: fraction,
+            label: 'Downloading images ($done/$total)',
+          ),
+        );
+      },
+      progressStart: progressStart,
+      progressEnd: progressEnd,
+    );
 
-    Future<String?> cachedDownload(String? relativePath) async {
+    Future<String?> lookup(String? relativePath) async {
       if (relativePath == null || relativePath.isEmpty) return null;
-      if (imageCache.containsKey(relativePath)) {
-        return imageCache[relativePath];
-      }
-      final local = await _downloadImage(client, origin, relativePath);
-      downloadedImages++;
-      final span = progressEnd - progressStart;
-      final fraction = progressStart +
-          span * (downloadedImages / totalImages).clamp(0, 1);
-      onProgress?.call(
-        TransferProgress(
-          fraction: fraction,
-          label: 'Transferring files',
-        ),
-      );
-      if (local != null) {
-        imageCache[relativePath] = local;
-      }
-      return local;
+      return imageCache[relativePath];
     }
 
     final imported = <ContentEntry>[];
     for (final item in rawPosts) {
       if (item is! Map<String, dynamic>) continue;
-      imported.add(
-        await _entryFromExport(
-          cachedDownload,
-          dateKey,
-          item,
-        ),
-      );
+      imported.add(await _entryFromExport(lookup, dateKey, item));
     }
 
     return imported.where((entry) => entry.hasContent).toList();
+  }
+
+  Future<Map<String, String?>> _downloadImagesParallel(
+    HttpClient client,
+    String origin,
+    List<String> relativePaths,
+    Directory importTempDir, {
+    required void Function(int done, int total) onProgress,
+    required double progressStart,
+    required double progressEnd,
+  }) async {
+    final cache = <String, String?>{};
+    if (relativePaths.isEmpty) {
+      onProgress(0, 0);
+      return cache;
+    }
+
+    var nextIndex = 0;
+    var completed = 0;
+    final total = relativePaths.length;
+
+    Future<void> worker() async {
+      while (true) {
+        final index = nextIndex++;
+        if (index >= total) return;
+        final path = relativePaths[index];
+        cache[path] = await _downloadImage(
+          client,
+          origin,
+          path,
+          importTempDir,
+        );
+        completed++;
+        onProgress(completed, total);
+      }
+    }
+
+    final workers = _imageConcurrency.clamp(1, total);
+    await Future.wait(List.generate(workers, (_) => worker()));
+    return cache;
   }
 
   Future<ContentEntry> _entryFromExport(
@@ -364,44 +433,40 @@ class CalendarImportService {
   Future<String?> _downloadImage(
     HttpClient client,
     String origin,
-    String? relativePath,
+    String relativePath,
+    Directory importTempDir,
   ) async {
-    if (relativePath == null || relativePath.isEmpty) return null;
-
     final normalized = relativePath.startsWith('/')
         ? relativePath
         : '/${relativePath.trim()}';
     final uri = Uri.parse('$origin$normalized');
 
-    final request = await client.getUrl(uri);
-    final response = await request.close();
-    if (response.statusCode != HttpStatus.ok) return null;
-
-    final bytes = await response.fold<List<int>>(
-      <int>[],
-      (previous, element) => previous..addAll(element),
-    );
-    if (bytes.isEmpty) return null;
-
-    final ext = p.extension(normalized);
-    final tempDir = Directory.systemTemp.createTempSync('content_calendar_import');
-    final tempFile = File(
-      p.join(
-        tempDir.path,
-        '${const Uuid().v4()}${ext.isEmpty ? '.jpg' : ext}',
-      ),
-    );
-    await tempFile.writeAsBytes(bytes, flush: true);
-
     try {
-      return await StorageService.instance.importImage(tempFile);
-    } finally {
-      if (tempFile.existsSync()) {
-        await tempFile.delete();
+      final request = await client.getUrl(uri);
+      final response = await request.close();
+      if (response.statusCode != HttpStatus.ok) return null;
+
+      final ext = p.extension(normalized);
+      final tempFile = File(
+        p.join(
+          importTempDir.path,
+          '${const Uuid().v4()}${ext.isEmpty ? '.jpg' : ext}',
+        ),
+      );
+      final sink = tempFile.openWrite();
+      try {
+        await response.pipe(sink);
+      } finally {
+        await sink.close();
       }
-      if (tempDir.existsSync()) {
-        await tempDir.delete();
+
+      if (!tempFile.existsSync() || tempFile.lengthSync() == 0) {
+        return null;
       }
+
+      return StorageService.instance.importImage(tempFile);
+    } catch (_) {
+      return null;
     }
   }
 }

@@ -224,7 +224,7 @@ class _SettingsPaywallPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return _SettingsPageShell(
       title: 'Plans & Pro',
-      child: const PaywallSheetBody(),
+      child: const PaywallSheetBody(embeddedInSettings: true),
     );
   }
 }
@@ -241,6 +241,8 @@ class _SettingsPageShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final closeSettings = _SettingsCloseScope.of(context);
+    final settingsNav = Navigator.of(context);
+    final canPopSubPage = settingsNav.canPop();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -250,11 +252,19 @@ class _SettingsPageShell extends StatelessWidget {
           child: Row(
             children: [
               IconButton(
-                tooltip: 'Close settings',
-                icon: const Icon(Icons.close_rounded),
+                tooltip: canPopSubPage ? 'Back' : 'Close settings',
+                icon: Icon(
+                  canPopSubPage
+                      ? Icons.arrow_back_rounded
+                      : Icons.close_rounded,
+                ),
                 onPressed: () {
                   AppHaptics.tap();
-                  closeSettings();
+                  if (canPopSubPage) {
+                    settingsNav.pop();
+                  } else {
+                    closeSettings();
+                  }
                 },
               ),
               Expanded(

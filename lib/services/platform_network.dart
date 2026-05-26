@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'local_address.dart';
-import 'local_share_host.dart';
 
 /// True when running inside the iOS Simulator (not a physical device).
 bool get isIOSSimulator {
@@ -30,21 +29,15 @@ bool isLoopbackShareHost(String host) {
       h.endsWith('.localhost');
 }
 
-/// Best hostname/IP for LAN share links on this device.
-Future<String?> resolveShareHost() async {
-  final ip = await primaryLanIPv4();
-
-  if (prefersIpShareHost) return ip;
-
-  final friendly = sanitizeLocalShareHost();
-  if (friendly != null && !isLoopbackShareHost(friendly)) {
-    return friendly;
-  }
-
-  return ip;
+bool _isLocalHostname(String host) {
+  final h = host.toLowerCase();
+  return h.endsWith('.local') || h.contains('.local.');
 }
 
-/// Optional secondary link (e.g. IP fallback when a friendly hostname is shown).
+/// LAN IP for share links — reliable across iPhone, Mac, and desktop.
+Future<String?> resolveShareHost() async => primaryLanIPv4();
+
+/// Optional secondary link when a friendly hostname was shown elsewhere.
 Future<String?> resolveShareHostFallback(String primaryHost) async {
   if (isLoopbackShareHost(primaryHost)) return null;
   final ip = await primaryLanIPv4();
@@ -52,7 +45,7 @@ Future<String?> resolveShareHostFallback(String primaryHost) async {
   return ip;
 }
 
-/// URIs to try when importing, in order (original first, then fallbacks).
+/// URIs to try when importing (original link, then IP / loopback fallbacks).
 Future<List<Uri>> importUriCandidates(Uri uri) async {
   final seen = <String>{};
   final candidates = <Uri>[];
@@ -65,16 +58,24 @@ Future<List<Uri>> importUriCandidates(Uri uri) async {
   add(uri);
 
   final host = uri.host.toLowerCase();
+  final ip = await primaryLanIPv4();
 
   if (isLoopbackShareHost(host)) {
-    if (Platform.isMacOS) {
-      add(uri.replace(host: '127.0.0.1'));
-      final ip = await primaryLanIPv4();
-      if (ip != null) {
-        add(uri.replace(host: ip));
-      }
-    }
+    add(uri.replace(host: '127.0.0.1'));
+    if (ip != null) add(uri.replace(host: ip));
     return candidates;
+  }
+
+  if (ip != null && host != ip) {
+    add(uri.replace(host: ip));
+  }
+
+  if (_isLocalHostname(host) && ip != null) {
+    add(uri.replace(host: ip));
+  }
+
+  if (Platform.isMacOS && ip != null && !isLoopbackShareHost(host) && host != ip) {
+    add(uri.replace(host: '127.0.0.1'));
   }
 
   return candidates;
@@ -84,6 +85,10 @@ String importConnectionHint(Uri uri) {
   if (isLoopbackShareHost(uri.host)) {
     return 'This link uses localhost and only works on the sender\'s device. '
         'Copy a fresh link from the sender — it should start with http://192.168…';
+  }
+  if (_isLocalHostname(uri.host)) {
+    return 'This link uses a computer name (.local) which often fails on phones. '
+        'Ask the sender to copy a new link — it should show an IP like http://192.168…';
   }
   if (Platform.isIOS || Platform.isAndroid) {
     return 'Could not connect. Make sure both devices are on the same Wi‑Fi '

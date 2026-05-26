@@ -5,7 +5,6 @@ import 'package:intl/intl.dart';
 import '../models/transfer_progress.dart';
 import '../services/calendar_share_service.dart';
 import '../services/plan_service.dart';
-import '../services/platform_network.dart';
 import 'adaptive_sheet.dart';
 import 'done_animation_overlay.dart';
 import 'paywall_sheet.dart';
@@ -132,9 +131,8 @@ class _DayShareSheetBodyState extends State<_DayShareSheetBody> {
   Widget build(BuildContext context) {
     return _ShareSheetLayout(
       title: 'Share this day',
-      subtitle: prefersIpShareHost
-          ? 'Copy this link to another phone or computer on the same Wi‑Fi.'
-          : 'Anyone on the same Wi‑Fi can import using this link.',
+      subtitle: 'Copy this link to another phone or computer on the same Wi‑Fi. '
+          'Links use your device IP (http://192.168…) for reliable imports.',
       preparing: _preparing,
       progress: _progress,
       url: _url,
@@ -216,9 +214,8 @@ class _MonthShareSheetBodyState extends State<_MonthShareSheetBody> {
   Widget build(BuildContext context) {
     return _ShareSheetLayout(
       title: 'Share whole month',
-      subtitle: prefersIpShareHost
-          ? 'Copy this link to share all posts in ${DateFormat('MMMM yyyy').format(widget.month)}.'
-          : 'Anyone on the same Wi‑Fi can import the full month using this link.',
+      subtitle: 'Copy this link to share all posts in ${DateFormat('MMMM yyyy').format(widget.month)}. '
+          'Links use your device IP (http://192.168…) for reliable imports.',
       preparing: _preparing,
       progress: _progress,
       url: _url,

@@ -149,6 +149,7 @@ class CalendarShareService {
         }
         request.response.headers.contentType = _contentTypeFor(fileName);
         final total = await file.length();
+        request.response.contentLength = total;
         var sent = 0;
         outboundProgress = const TransferProgress(fraction: 0, label: 'Sending');
         await for (final chunk in file.openRead()) {

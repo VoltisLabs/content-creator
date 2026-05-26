@@ -1,7 +1,24 @@
 import 'dart:io';
 
-/// Best-effort LAN IPv4 for sharing URLs (Wi‑Fi / Ethernet).
+import 'package:network_info_plus/network_info_plus.dart';
+
+/// Best-effort Wi‑Fi IPv4 for LAN share links (Pinnacle-style discovery).
+Future<String?> localWifiIPv4() async {
+  final info = NetworkInfo();
+  try {
+    final ip = await info.getWifiIP();
+    if (ip == null || ip.isEmpty || ip == '0.0.0.0') return null;
+    return ip;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Non-loopback IPv4 for LAN URLs — Wi‑Fi first, then interface scan.
 Future<String?> primaryLanIPv4() async {
+  final wifi = await localWifiIPv4();
+  if (wifi != null) return wifi;
+
   try {
     final interfaces = await NetworkInterface.list(
       includeLoopback: false,
@@ -9,6 +26,7 @@ Future<String?> primaryLanIPv4() async {
     );
     String? fallback;
     for (final iface in interfaces) {
+      if (iface.name == 'lo0') continue;
       for (final addr in iface.addresses) {
         if (addr.type != InternetAddressType.IPv4 || addr.isLoopback) {
           continue;

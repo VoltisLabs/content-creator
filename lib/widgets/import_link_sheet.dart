@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 
 import '../models/transfer_progress.dart';
 import '../services/calendar_import_service.dart';
-import '../services/platform_network.dart';
 import 'adaptive_sheet.dart';
 import 'done_animation_overlay.dart';
 import 'haptic_buttons.dart';
@@ -11,7 +10,7 @@ import 'transfer_progress_button.dart';
 
 Future<void> showImportLinkSheet(
   BuildContext context, {
-  required ValueChanged<String> onImported,
+  required ValueChanged<CalendarImportResult> onImported,
 }) async {
   final clipboard = await Clipboard.getData('text/plain');
   final clip = clipboard?.text?.trim() ?? '';
@@ -44,7 +43,7 @@ class _ImportLinkSheet extends StatefulWidget {
   });
 
   final String initialText;
-  final ValueChanged<String> onImported;
+  final ValueChanged<CalendarImportResult> onImported;
 
   @override
   State<_ImportLinkSheet> createState() => _ImportLinkSheetState();
@@ -86,7 +85,7 @@ class _ImportLinkSheetState extends State<_ImportLinkSheet> {
     setState(() {
       _importing = true;
       _errorText = null;
-      _progress = const TransferProgress(fraction: 0, label: 'Starting');
+      _progress = const TransferProgress(fraction: 0, label: 'Downloading…');
     });
 
     try {
@@ -99,7 +98,7 @@ class _ImportLinkSheetState extends State<_ImportLinkSheet> {
       );
       if (!mounted) return;
       Navigator.pop(context);
-      widget.onImported(result.dateKey);
+      widget.onImported(result);
       await showDoneAnimation(
         context,
         title: 'Import complete!',
@@ -142,9 +141,8 @@ class _ImportLinkSheetState extends State<_ImportLinkSheet> {
           ),
           const SizedBox(height: 8),
           Text(
-            prefersIpShareHost
-                ? 'Paste a link from another device on the same Wi‑Fi. It should look like http://192.168.x.x:port/day/…'
-                : 'Paste a link copied from another Content Calendar user on your Wi‑Fi.',
+            'Paste a link from another device on the same Wi‑Fi. '
+            'It should look like http://192.168.x.x:port/day/2026-05-24',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Theme.of(context)
                       .colorScheme
@@ -161,9 +159,7 @@ class _ImportLinkSheetState extends State<_ImportLinkSheet> {
             textInputAction: TextInputAction.done,
             autocorrect: false,
             decoration: InputDecoration(
-              hintText: prefersIpShareHost
-                  ? 'http://192.168.1.10:54321/day/2026-05-24'
-                  : 'http://macbook-pro.local:54321/day/2026-05-24',
+              hintText: 'http://192.168.1.10:54321/day/2026-05-24',
               suffixIcon: HapticIconButton(
                 tooltip: 'Paste',
                 onPressed: _importing ? null : _pasteFromClipboard,
@@ -184,7 +180,7 @@ class _ImportLinkSheetState extends State<_ImportLinkSheet> {
           const SizedBox(height: 16),
           TransferProgressButton(
             progress: _importing ? _progress : null,
-            activeLabel: _progress?.label ?? 'Importing',
+            activeLabel: _progress?.label ?? 'Downloading…',
             idleLabel: 'Import posts',
             idleIcon: Icons.download_outlined,
             onPressed: _importing ? null : _importLink,
