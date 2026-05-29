@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../constants/app_version.dart';
+import '../models/voltis_plan.dart';
 import '../constants/legal_urls.dart';
 import '../screens/legal_document_screen.dart';
 import '../services/app_preferences.dart';
@@ -13,6 +14,7 @@ import '../services/desktop_window.dart' show isDesktop;
 import '../services/plan_service.dart';
 import '../services/storage_service.dart';
 import '../services/subscription_service.dart';
+import '../state/app_settings.dart';
 import '../state/appearance_controller.dart';
 import '../theme/app_theme.dart';
 import '../theme/app_theme_preset.dart';
@@ -20,6 +22,8 @@ import '../theme/calendar_ambient_mode.dart';
 import '../utils/app_haptics.dart';
 import 'calendar_ambient_backdrop.dart';
 import 'paywall_sheet.dart';
+import 'settings_account_page.dart';
+import 'settings_plans_page.dart';
 import 'theme_preset_chip.dart';
 
 Future<void> _launchExternalUrl(String url) async {
@@ -110,7 +114,11 @@ class SettingsFlow extends StatefulWidget {
 class _SettingsFlowState extends State<SettingsFlow> {
   final _navKey = GlobalKey<NavigatorState>();
 
-  void _push(String route) => _navKey.currentState!.pushNamed(route);
+  void _push(String route) {
+    final nav = _navKey.currentState;
+    if (nav == null) return;
+    nav.pushNamed(route);
+  }
 
   AppThemePreset get _previewPreset => widget.appearance.settingsUiPreset;
   bool get _previewUseCustomBg => widget.appearance.settingsUseCustomBackground;
@@ -159,62 +167,65 @@ class _SettingsFlowState extends State<SettingsFlow> {
               child: Navigator(
                 key: _navKey,
           initialRoute: '/',
-          onGenerateRoute: (route) {
-            Widget page;
-            switch (route.name) {
-              case '/appearance':
-                page = _SettingsAppearancePage(
-                  appearance: widget.appearance,
-                  onPresetSelected: _applyPreset,
-                  onAmbientSelected: _applyAmbient,
-                );
-              case '/background':
-                page = _SettingsBackgroundPage(
-                  useCustomBackground: _previewUseCustomBg,
-                  onUseCustomBackgroundChanged: _previewUseCustomBgChanged,
-                  onCustomBackgroundChanged: widget.appearance.refreshCustomBackgroundPath,
-                  onOpenPaywall: () => _push('/plans'),
-                );
-              case '/sound':
-                page = const _SettingsSoundPage();
-              case '/window':
-                page = _SettingsWindowPage(
-                  stayOnTop: widget.stayOnTop,
-                  onStayOnTopChanged: widget.onStayOnTopChanged,
-                );
-              case '/plans':
-                page = const _SettingsPaywallPage();
-              case '/about':
-                page = const _SettingsAboutPage();
-              case '/help':
-                page = const _SettingsHelpPage();
-              case '/bug':
-                page = const _SettingsReportBugPage();
-              case '/purge':
-                page = _SettingsPurgePage(
-                  onPurged: () {
-                    widget.onStorageChanged?.call();
-                    widget.onClose();
-                  },
-                );
-              case '/':
-              default:
-                page = _SettingsHomePage(
-                  onOpenPlans: () => _push('/plans'),
-                  onOpenAppearance: _pushAppearance,
-                  onOpenBackground: () => _push('/background'),
-                  onOpenSound: () => _push('/sound'),
-                  onOpenWindow: isDesktop ? () => _push('/window') : null,
-                  onOpenAbout: () => _push('/about'),
-                  onOpenHelp: () => _push('/help'),
-                  onOpenReportBug: () => _push('/bug'),
-                  onOpenPurge: () => _push('/purge'),
-                );
+          onGenerateRoute: (settings) {
+            final name = settings.name ?? '/';
+            final Widget page;
+            if (name == '/appearance') {
+              page = _SettingsAppearancePage(
+                appearance: widget.appearance,
+                onPresetSelected: _applyPreset,
+                onAmbientSelected: _applyAmbient,
+              );
+            } else if (name == '/background') {
+              page = _SettingsBackgroundPage(
+                useCustomBackground: _previewUseCustomBg,
+                onUseCustomBackgroundChanged: _previewUseCustomBgChanged,
+                onCustomBackgroundChanged:
+                    widget.appearance.refreshCustomBackgroundPath,
+                onOpenPaywall: () => _push('/plans'),
+              );
+            } else if (name == '/sound') {
+              page = const _SettingsSoundPage();
+            } else if (name == '/window') {
+              page = _SettingsWindowPage(
+                stayOnTop: widget.stayOnTop,
+                onStayOnTopChanged: widget.onStayOnTopChanged,
+              );
+            } else if (name == '/account') {
+              page = _SettingsAccountShell(onOpenPlans: () => _push('/plans'));
+            } else if (name == '/plans') {
+              page = const _SettingsPlansShell();
+            } else if (name == '/about') {
+              page = const _SettingsAboutPage();
+            } else if (name == '/help') {
+              page = const _SettingsHelpPage();
+            } else if (name == '/bug') {
+              page = const _SettingsReportBugPage();
+            } else if (name == '/purge') {
+              page = _SettingsPurgePage(
+                onPurged: () {
+                  widget.onStorageChanged?.call();
+                  widget.onClose();
+                },
+              );
+            } else {
+              page = _SettingsHomePage(
+                onOpenAccount: () => _push('/account'),
+                onOpenPlans: () => _push('/plans'),
+                onOpenAppearance: _pushAppearance,
+                onOpenBackground: () => _push('/background'),
+                onOpenSound: () => _push('/sound'),
+                onOpenWindow: isDesktop ? () => _push('/window') : null,
+                onOpenAbout: () => _push('/about'),
+                onOpenHelp: () => _push('/help'),
+                onOpenReportBug: () => _push('/bug'),
+                onOpenPurge: () => _push('/purge'),
+              );
             }
 
             return _SettingsSlideRoute<void>(
               builder: (_) => page,
-              settings: route,
+              settings: settings,
             );
           },
               ),
@@ -226,14 +237,28 @@ class _SettingsFlowState extends State<SettingsFlow> {
   }
 }
 
-class _SettingsPaywallPage extends StatelessWidget {
-  const _SettingsPaywallPage();
+class _SettingsAccountShell extends StatelessWidget {
+  const _SettingsAccountShell({required this.onOpenPlans});
+
+  final VoidCallback onOpenPlans;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SettingsPageShell(
+      title: 'Voltis Core Account',
+      child: SettingsAccountPage(onOpenPlans: onOpenPlans),
+    );
+  }
+}
+
+class _SettingsPlansShell extends StatelessWidget {
+  const _SettingsPlansShell();
 
   @override
   Widget build(BuildContext context) {
     return _SettingsPageShell(
       title: 'Plans',
-      child: const PaywallSheetBody(embeddedInSettings: true),
+      child: const SettingsPlansPage(),
     );
   }
 }
@@ -354,6 +379,7 @@ class _SettingsPlanBadgeState extends State<_SettingsPlanBadge> {
 
 class _SettingsHomePage extends StatefulWidget {
   const _SettingsHomePage({
+    required this.onOpenAccount,
     required this.onOpenPlans,
     required this.onOpenAppearance,
     required this.onOpenBackground,
@@ -365,6 +391,7 @@ class _SettingsHomePage extends StatefulWidget {
     required this.onOpenPurge,
   });
 
+  final VoidCallback onOpenAccount;
   final VoidCallback onOpenPlans;
   final VoidCallback onOpenAppearance;
   final VoidCallback onOpenBackground;
@@ -419,6 +446,7 @@ class _SettingsHomePageState extends State<_SettingsHomePage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isPro = _subscriptions.isPro;
+    final account = AppSettingsScope.of(context);
 
     return _SettingsPageShell(
       title: 'Settings',
@@ -428,6 +456,14 @@ class _SettingsHomePageState extends State<_SettingsHomePage> {
         child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
         children: [
+          _navTile(
+            icon: Icons.person_outline_rounded,
+            title: account.isSignedIn ? 'Voltis Core Account' : 'Sign in',
+            subtitle: account.accountEmail ??
+                'Voltis Core - sync Pro entitlements on this device',
+            onTap: widget.onOpenAccount,
+          ),
+          const Divider(height: 1),
           _navTile(
             icon: Icons.palette_outlined,
             title: 'Appearance',
@@ -461,7 +497,7 @@ class _SettingsHomePageState extends State<_SettingsHomePage> {
           _navTile(
             icon: isPro ? Icons.workspace_premium_rounded : Icons.star_outline_rounded,
             title: 'Plans',
-            subtitle: isPro ? 'Manage your Pro subscription' : 'Upgrade on the App Store',
+            subtitle: _plansSubtitle(account),
             onTap: widget.onOpenPlans,
           ),
           const Divider(height: 1),
@@ -516,6 +552,14 @@ class _SettingsHomePageState extends State<_SettingsHomePage> {
         ),
       ),
     );
+  }
+
+  String _plansSubtitle(AppSettings account) {
+    final tier = account.planTier;
+    final pro = _subscriptions.isPro;
+    if (pro && tier.isPaid) return '${tier.label} · Pro active';
+    if (pro) return 'Pro active · App Store or Voltis Core';
+    return 'Free · view plans on Voltiscore';
   }
 
   Widget _navTile({

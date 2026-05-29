@@ -1,9 +1,8 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import 'app_theme_preset.dart';
 import 'page_slide_transitions.dart';
+import 'ui_fonts.dart';
 
 /// Theme tokens copied from Voltis Labs products (NotepadPro, Pinnacle).
 abstract final class AppTheme {
@@ -257,25 +256,20 @@ abstract final class AppTheme {
       splashFactory: InkSparkle.splashFactory,
     );
 
-    final isMobile = !kIsWeb &&
-        (defaultTargetPlatform == TargetPlatform.android ||
-            defaultTargetPlatform == TargetPlatform.iOS);
-
     TextTheme textTheme;
-    if (isMobile) {
-      textTheme = base.textTheme;
-    } else {
-      try {
-        textTheme = GoogleFonts.plusJakartaSansTextTheme(base.textTheme);
-      } catch (_) {
-        textTheme = base.textTheme;
-      }
+    try {
+      textTheme = base.textTheme.apply(
+        fontFamily: UiFonts.family,
+        fontFamilyFallback: UiFonts.fallback,
+        bodyColor: scheme.onSurface,
+        displayColor: scheme.onSurface,
+      );
+    } catch (_) {
+      textTheme = base.textTheme.apply(
+        bodyColor: scheme.onSurface,
+        displayColor: scheme.onSurface,
+      );
     }
-
-    textTheme = textTheme.apply(
-      bodyColor: scheme.onSurface,
-      displayColor: scheme.onSurface,
-    );
 
     final isLight = brightness == Brightness.light;
     final border = scheme.outline.withValues(alpha: isLight ? 0.55 : 0.65);
@@ -317,25 +311,23 @@ abstract final class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: scheme.surfaceContainerHighest.withValues(
-          alpha: isLight ? 0.65 : 0.55,
-        ),
+        fillColor: scheme.surfaceContainerHighest,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide.none,
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: scheme.outline.withValues(alpha: 0.8)),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide.none,
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: scheme.outline.withValues(alpha: 0.8)),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: scheme.primary, width: 1.4),
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: scheme.primary, width: 1.6),
         ),
         hintStyle: textTheme.bodyMedium?.copyWith(
           color: scheme.onSurfaceVariant.withValues(alpha: 0.85),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       ),
       chipTheme: ChipThemeData(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),

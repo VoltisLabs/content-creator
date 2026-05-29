@@ -19,6 +19,7 @@ class SubscriptionService extends ChangeNotifier {
   static final SubscriptionService instance = SubscriptionService._();
 
   static const _entitlementKey = 'pro_subscription_active';
+  static const _coreEntitlementKey = 'content_calendar.corePro';
 
   final InAppPurchase _store = InAppPurchase.instance;
   StreamSubscription<List<PurchaseDetails>>? _purchaseSub;
@@ -26,13 +27,14 @@ class SubscriptionService extends ChangeNotifier {
   var _initialized = false;
   var _storeAvailable = false;
   var _proEntitled = false;
+  var _coreProEntitled = false;
   var _purchasePending = false;
   ProductDetails? _proProduct;
   String? _lastError;
 
   bool get supportsNativeStore => !kIsWeb && Platform.isIOS;
   bool get storeAvailable => _storeAvailable;
-  bool get isPro => _proEntitled;
+  bool get isPro => _proEntitled || _coreProEntitled;
   bool get purchasePending => _purchasePending;
   ProductDetails? get proProduct => _proProduct;
   String? get lastError => _lastError;
@@ -58,6 +60,7 @@ class SubscriptionService extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       _proEntitled = prefs.getBool(_entitlementKey) ?? false;
+      _coreProEntitled = prefs.getBool(_coreEntitlementKey) ?? false;
 
       if (!supportsNativeStore) {
         notifyListeners();
@@ -103,6 +106,14 @@ class SubscriptionService extends ChangeNotifier {
   Future<void> disposeService() async {
     await _purchaseSub?.cancel();
     _purchaseSub = null;
+  }
+
+  /// Pro from Voltis Core entitlements (signed-in account).
+  Future<void> setCoreProEntitlement(bool value) async {
+    _coreProEntitled = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_coreEntitlementKey, value);
+    notifyListeners();
   }
 
   /// Re-fetch product metadata (call when opening the paywall).

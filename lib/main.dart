@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'screens/auth_gate.dart';
 import 'screens/voltis_splash_screen.dart';
 import 'services/appearance_preferences.dart';
 import 'services/calendar_share_service.dart';
@@ -12,7 +13,9 @@ import 'services/custom_background_service.dart';
 import 'services/desktop_window.dart';
 import 'services/storage_service.dart';
 import 'services/subscription_service.dart';
+import 'services/voltis_core_service.dart';
 import 'state/appearance_controller.dart';
+import 'state/app_settings.dart';
 import 'theme/app_theme.dart';
 import 'theme/app_theme_preset.dart';
 import 'theme/calendar_ambient_mode.dart';
@@ -31,6 +34,15 @@ Future<void> main() async {
 
   await initDesktopWindow();
   await StorageService.instance.init();
+  final settings = await AppSettings.load();
+  await VoltisCoreService.instance.initialize();
+  if (VoltisCoreService.instance.isSignedIn) {
+    await VoltisCoreService.instance.syncFromSession();
+    await applyVoltisSessionToApp(settings);
+  } else if (settings.contentCalendarPro) {
+    await SubscriptionService.instance
+        .setCoreProEntitlement(settings.contentCalendarPro);
+  }
   final storedPreset = await AppearancePreferences.loadPreset();
   final kind = await AppearancePreferences.loadKind(preset: storedPreset);
   final preset = kind == HomeThemeKind.live
@@ -41,12 +53,15 @@ Future<void> main() async {
   final customBgFile = await CustomBackgroundService.instance.loadBackgroundFile();
 
   runApp(
-    ContentCalendarApp(
-      initialKind: kind,
-      initialPreset: preset,
-      initialAmbient: ambient,
-      initialUseCustomBackground: useCustomBg && customBgFile != null,
-      initialCustomBackgroundPath: customBgFile?.path,
+    AppSettingsScope(
+      settings: settings,
+      child: ContentCalendarApp(
+        initialKind: kind,
+        initialPreset: preset,
+        initialAmbient: ambient,
+        initialUseCustomBackground: useCustomBg && customBgFile != null,
+        initialCustomBackgroundPath: customBgFile?.path,
+      ),
     ),
   );
 
@@ -180,12 +195,14 @@ class _ContentCalendarAppState extends State<ContentCalendarApp> {
   @override
   Widget build(BuildContext context) {
     final home = VoltisSplashScreen(
-      child: HomeShell(
-        appearance: _appearance,
-        violetDarkMode: _violetDarkMode,
-        onToggleVioletBrightness: _toggleVioletBrightness,
-        stayOnTop: _stayOnTop,
-        onStayOnTopChanged: _setStayOnTop,
+      child: AuthGate(
+        child: HomeShell(
+          appearance: _appearance,
+          violetDarkMode: _violetDarkMode,
+          onToggleVioletBrightness: _toggleVioletBrightness,
+          stayOnTop: _stayOnTop,
+          onStayOnTopChanged: _setStayOnTop,
+        ),
       ),
     );
 
