@@ -84,11 +84,11 @@ Future<List<Uri>> importUriCandidates(Uri uri) async {
 String importConnectionHint(Uri uri) {
   if (isLoopbackShareHost(uri.host)) {
     return 'This link uses localhost and only works on the sender\'s device. '
-        'Copy a fresh link from the sender — it should start with http://192.168…';
+        'Copy a fresh link from the sender - it should start with http://192.168…';
   }
   if (_isLocalHostname(uri.host)) {
     return 'This link uses a computer name (.local) which often fails on phones. '
-        'Ask the sender to copy a new link — it should show an IP like http://192.168…';
+        'Ask the sender to copy a new link - it should show an IP like http://192.168…';
   }
   if (Platform.isIOS || Platform.isAndroid) {
     return 'Could not connect. Make sure both devices are on the same Wi‑Fi '

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../constants/app_version.dart';
@@ -10,6 +11,7 @@ import '../services/app_preferences.dart';
 import '../services/custom_background_service.dart';
 import '../services/desktop_window.dart' show isDesktop;
 import '../services/plan_service.dart';
+import '../services/storage_service.dart';
 import '../services/subscription_service.dart';
 import '../state/appearance_controller.dart';
 import '../theme/app_theme.dart';
@@ -35,21 +37,10 @@ class _SettingsSlideRoute<T> extends PageRouteBuilder<T> {
   }) : super(
           settings: settings,
           pageBuilder: (context, animation, secondaryAnimation) => builder(context),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            final slide = Tween<Offset>(
-              begin: const Offset(1, 0),
-              end: Offset.zero,
-            ).animate(
-              CurvedAnimation(
-                parent: animation,
-                curve: Curves.easeInOutCubic,
-                reverseCurve: Curves.easeInOutCubic,
-              ),
-            );
-            return SlideTransition(position: slide, child: child);
-          },
-          transitionDuration: const Duration(milliseconds: 280),
-          reverseTransitionDuration: const Duration(milliseconds: 250),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+              child,
+          transitionDuration: Duration.zero,
+          reverseTransitionDuration: Duration.zero,
         );
 }
 
@@ -101,6 +92,7 @@ class SettingsFlow extends StatefulWidget {
     required this.onStayOnTopChanged,
     required this.onClose,
     required this.onAppearanceApplied,
+    this.onStorageChanged,
   });
 
   final AppearanceController appearance;
@@ -109,6 +101,7 @@ class SettingsFlow extends StatefulWidget {
   final ValueChanged<bool> onStayOnTopChanged;
   final VoidCallback onClose;
   final VoidCallback onAppearanceApplied;
+  final VoidCallback? onStorageChanged;
 
   @override
   State<SettingsFlow> createState() => _SettingsFlowState();
@@ -130,13 +123,18 @@ class _SettingsFlowState extends State<SettingsFlow> {
   Future<void> _applyPreset(AppThemePreset preset) async {
     AppHaptics.tap();
     await widget.appearance.selectPalettePreset(preset);
-    widget.onAppearanceApplied();
+    if (mounted) setState(() {});
   }
 
   Future<void> _applyAmbient(CalendarAmbientMode mode) async {
     AppHaptics.tap();
     await widget.appearance.selectLiveTheme(mode);
-    widget.onAppearanceApplied();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _pushAppearance() async {
+    await _navKey.currentState!.pushNamed('/appearance');
+    if (mounted) setState(() {});
   }
 
   Future<void> _previewUseCustomBgChanged(bool value) async {
@@ -148,16 +146,18 @@ class _SettingsFlowState extends State<SettingsFlow> {
   Widget build(BuildContext context) {
     return _SettingsCloseScope(
       onClose: _closeSettings,
-      child: Theme(
-        data: AppTheme.resolve(
-          preset: _previewPreset,
-          violetDarkMode: widget.violetDarkMode,
-        ),
-        child: Scaffold(
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        body: SafeArea(
-          child: Navigator(
-          key: _navKey,
+      child: Material(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        child: Theme(
+          data: AppTheme.resolve(
+            preset: _previewPreset,
+            violetDarkMode: widget.violetDarkMode,
+          ),
+          child: Scaffold(
+            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+            body: SafeArea(
+              child: Navigator(
+                key: _navKey,
           initialRoute: '/',
           onGenerateRoute: (route) {
             Widget page;
@@ -190,17 +190,25 @@ class _SettingsFlowState extends State<SettingsFlow> {
                 page = const _SettingsHelpPage();
               case '/bug':
                 page = const _SettingsReportBugPage();
+              case '/purge':
+                page = _SettingsPurgePage(
+                  onPurged: () {
+                    widget.onStorageChanged?.call();
+                    widget.onClose();
+                  },
+                );
               case '/':
               default:
                 page = _SettingsHomePage(
                   onOpenPlans: () => _push('/plans'),
-                  onOpenAppearance: () => _push('/appearance'),
+                  onOpenAppearance: _pushAppearance,
                   onOpenBackground: () => _push('/background'),
                   onOpenSound: () => _push('/sound'),
                   onOpenWindow: isDesktop ? () => _push('/window') : null,
                   onOpenAbout: () => _push('/about'),
                   onOpenHelp: () => _push('/help'),
                   onOpenReportBug: () => _push('/bug'),
+                  onOpenPurge: () => _push('/purge'),
                 );
             }
 
@@ -209,8 +217,9 @@ class _SettingsFlowState extends State<SettingsFlow> {
               settings: route,
             );
           },
+              ),
+            ),
           ),
-        ),
         ),
       ),
     );
@@ -223,7 +232,7 @@ class _SettingsPaywallPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _SettingsPageShell(
-      title: 'Plans & Pro',
+      title: 'Plans',
       child: const PaywallSheetBody(embeddedInSettings: true),
     );
   }
@@ -233,10 +242,12 @@ class _SettingsPageShell extends StatelessWidget {
   const _SettingsPageShell({
     required this.title,
     required this.child,
+    this.trailing,
   });
 
   final String title;
   final Widget child;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -275,12 +286,68 @@ class _SettingsPageShell extends StatelessWidget {
                       ),
                 ),
               ),
+              if (trailing != null) trailing!,
             ],
           ),
         ),
         const Divider(height: 1),
         Expanded(child: child),
       ],
+    );
+  }
+}
+
+class _SettingsPlanBadge extends StatefulWidget {
+  const _SettingsPlanBadge({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  State<_SettingsPlanBadge> createState() => _SettingsPlanBadgeState();
+}
+
+class _SettingsPlanBadgeState extends State<_SettingsPlanBadge> {
+  final _subscriptions = SubscriptionService.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    _subscriptions.addListener(_rebuild);
+  }
+
+  @override
+  void dispose() {
+    _subscriptions.removeListener(_rebuild);
+    super.dispose();
+  }
+
+  void _rebuild() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isPro = _subscriptions.isPro;
+    final label = isPro ? 'Pro Plan' : 'Free Plan';
+
+    return TextButton(
+      onPressed: () {
+        AppHaptics.tap();
+        widget.onTap();
+      },
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        backgroundColor: theme.colorScheme.primaryContainer.withValues(
+          alpha: isPro ? 0.9 : 0.65,
+        ),
+        foregroundColor: theme.colorScheme.onPrimaryContainer,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      ),
+      child: Text(
+        label,
+        style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
+      ),
     );
   }
 }
@@ -295,6 +362,7 @@ class _SettingsHomePage extends StatefulWidget {
     required this.onOpenAbout,
     required this.onOpenHelp,
     required this.onOpenReportBug,
+    required this.onOpenPurge,
   });
 
   final VoidCallback onOpenPlans;
@@ -305,6 +373,7 @@ class _SettingsHomePage extends StatefulWidget {
   final VoidCallback onOpenAbout;
   final VoidCallback onOpenHelp;
   final VoidCallback onOpenReportBug;
+  final VoidCallback onOpenPurge;
 
   @override
   State<_SettingsHomePage> createState() => _SettingsHomePageState();
@@ -353,18 +422,12 @@ class _SettingsHomePageState extends State<_SettingsHomePage> {
 
     return _SettingsPageShell(
       title: 'Settings',
+      trailing: _SettingsPlanBadge(onTap: widget.onOpenPlans),
       child: Theme(
         data: _settingsListTheme(context),
         child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
         children: [
-          _navTile(
-            icon: isPro ? Icons.workspace_premium_rounded : Icons.star_outline_rounded,
-            title: isPro ? 'Pro subscription' : 'Plans & Pro',
-            subtitle: isPro ? 'Manage subscription' : 'Upgrade on the App Store',
-            onTap: widget.onOpenPlans,
-          ),
-          const Divider(height: 24),
           _navTile(
             icon: Icons.palette_outlined,
             title: 'Appearance',
@@ -375,7 +438,7 @@ class _SettingsHomePageState extends State<_SettingsHomePage> {
           _navTile(
             icon: Icons.wallpaper_outlined,
             title: 'Background',
-            subtitle: isPro ? 'Custom photo behind calendar' : 'Pro — custom photo',
+            subtitle: isPro ? 'Custom photo behind calendar' : 'Pro - custom photo',
             onTap: widget.onOpenBackground,
           ),
           const Divider(height: 1),
@@ -395,6 +458,20 @@ class _SettingsHomePageState extends State<_SettingsHomePage> {
             ),
           ],
           const Divider(height: 24),
+          _navTile(
+            icon: isPro ? Icons.workspace_premium_rounded : Icons.star_outline_rounded,
+            title: 'Plans',
+            subtitle: isPro ? 'Manage your Pro subscription' : 'Upgrade on the App Store',
+            onTap: widget.onOpenPlans,
+          ),
+          const Divider(height: 1),
+          _navTile(
+            icon: Icons.delete_sweep_outlined,
+            title: 'Purge content',
+            subtitle: 'Delete posts by day, month, year, or all',
+            onTap: widget.onOpenPurge,
+          ),
+          const Divider(height: 1),
           _navTile(
             icon: Icons.help_outline_rounded,
             title: 'Help and support',
@@ -486,7 +563,7 @@ class _SettingsAppearancePage extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
         children: [
           Text(
-            'Choose one look: a colour or gradient palette, or a live animated theme — not both. Tap to apply and return to your calendar.',
+            'Choose one look: a colour or gradient palette, or a live animated theme - not both. Tap to preview, then close settings to apply.',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
             ),
@@ -565,7 +642,7 @@ class _SettingsAppearancePage extends StatelessWidget {
                 Positioned.fill(
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(12),
-                    child: AmbientThemePreview(mode: mode, time: index * 0.7),
+                    child: AmbientThemePreview(mode: mode),
                   ),
                 ),
                 Positioned(
@@ -962,7 +1039,7 @@ class _SettingsReportBugPage extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
         children: [
           Text(
-            'Tell us what went wrong — include your device, app version '
+            'Tell us what went wrong - include your device, app version '
             '(${AppVersion.label}), and steps to reproduce if you can.',
             style: theme.textTheme.bodyMedium?.copyWith(color: muted),
           ),
@@ -974,6 +1051,221 @@ class _SettingsReportBugPage extends StatelessWidget {
             },
             icon: const Icon(Icons.mail_outline),
             label: const Text('Email support'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsPurgePage extends StatefulWidget {
+  const _SettingsPurgePage({required this.onPurged});
+
+  final VoidCallback onPurged;
+
+  @override
+  State<_SettingsPurgePage> createState() => _SettingsPurgePageState();
+}
+
+class _SettingsPurgePageState extends State<_SettingsPurgePage> {
+  final _storage = StorageService.instance;
+  PurgeScope _scope = PurgeScope.day;
+  DateTime _target = DateTime.now();
+
+  DateTime? get _targetForScope =>
+      _scope == PurgeScope.all ? null : _target;
+
+  int get _postCount =>
+      _storage.countPostsForPurge(scope: _scope, target: _targetForScope);
+
+  Future<void> _pickTarget() async {
+    AppHaptics.tap();
+    switch (_scope) {
+      case PurgeScope.day:
+        final picked = await showDatePicker(
+          context: context,
+          initialDate: _target,
+          firstDate: DateTime(2000),
+          lastDate: DateTime(2100),
+        );
+        if (picked != null) setState(() => _target = picked);
+      case PurgeScope.month:
+        final picked = await showDatePicker(
+          context: context,
+          initialDate: _target,
+          firstDate: DateTime(2000),
+          lastDate: DateTime(2100),
+          helpText: 'Select a day in the month to purge',
+        );
+        if (picked != null) {
+          setState(() => _target = DateTime(picked.year, picked.month));
+        }
+      case PurgeScope.year:
+        final year = await showDialog<int>(
+          context: context,
+          builder: (context) {
+            final controller = TextEditingController(text: '${_target.year}');
+            return AlertDialog(
+              title: const Text('Year to purge'),
+              content: TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(hintText: 'e.g. 2026'),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.pop(context, int.tryParse(controller.text.trim()));
+                  },
+                  child: const Text('OK'),
+                ),
+              ],
+            );
+          },
+        );
+        if (year != null && year >= 2000 && year <= 2100) {
+          setState(() => _target = DateTime(year));
+        }
+      case PurgeScope.all:
+        break;
+    }
+  }
+
+  String get _targetLabel {
+    switch (_scope) {
+      case PurgeScope.day:
+        return DateFormat('EEEE, MMMM d, yyyy').format(_target);
+      case PurgeScope.month:
+        return DateFormat('MMMM yyyy').format(_target);
+      case PurgeScope.year:
+        return '${_target.year}';
+      case PurgeScope.all:
+        return 'Entire app';
+    }
+  }
+
+  Future<void> _confirmPurge() async {
+    if (_scope != PurgeScope.all && _postCount == 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nothing to delete for this selection.')),
+      );
+      return;
+    }
+
+    final scopeLabel = switch (_scope) {
+      PurgeScope.day => 'this day',
+      PurgeScope.month => 'this month',
+      PurgeScope.year => 'this year',
+      PurgeScope.all => 'all content in the app',
+    };
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete content?'),
+        content: Text(
+          _scope == PurgeScope.all
+              ? 'This permanently deletes every post and image. This cannot be undone.'
+              : 'Delete $_postCount post${_postCount == 1 ? '' : 's'} for $scopeLabel ($_targetLabel)? This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final deleted = await _storage.purgeContent(
+      scope: _scope,
+      target: _targetForScope,
+    );
+    if (!mounted) return;
+
+    widget.onPurged();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          deleted == 0
+              ? 'No posts were deleted.'
+              : 'Deleted $deleted post${deleted == 1 ? '' : 's'}.',
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final totalAll = _storage.countPostsForPurge(scope: PurgeScope.all);
+
+    return _SettingsPageShell(
+      title: 'Purge content',
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        children: [
+          Text(
+            'Permanently remove posts and images. Choose what to delete.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
+            ),
+          ),
+          const SizedBox(height: 16),
+          ...PurgeScope.values.map((scope) {
+            final label = switch (scope) {
+              PurgeScope.day => 'One day',
+              PurgeScope.month => 'One month',
+              PurgeScope.year => 'One year',
+              PurgeScope.all => 'Everything',
+            };
+            return RadioListTile<PurgeScope>(
+              value: scope,
+              groupValue: _scope,
+              onChanged: (value) {
+                if (value == null) return;
+                AppHaptics.tap();
+                setState(() => _scope = value);
+              },
+              title: Text(label),
+              contentPadding: EdgeInsets.zero,
+            );
+          }),
+          if (_scope != PurgeScope.all) ...[
+            const SizedBox(height: 8),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Target'),
+              subtitle: Text(_targetLabel),
+              trailing: const Icon(Icons.edit_calendar_outlined),
+              onTap: _pickTarget,
+            ),
+          ],
+          const SizedBox(height: 12),
+          Text(
+            _scope == PurgeScope.all
+                ? '$totalAll post${totalAll == 1 ? '' : 's'} will be deleted'
+                : '$_postCount post${_postCount == 1 ? '' : 's'} will be deleted',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.error.withValues(alpha: 0.9),
+            ),
+          ),
+          const SizedBox(height: 20),
+          FilledButton(
+            onPressed: _confirmPurge,
+            child: const Text('Purge selected content'),
           ),
         ],
       ),

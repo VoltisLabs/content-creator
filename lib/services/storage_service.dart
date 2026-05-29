@@ -8,6 +8,8 @@ import 'package:uuid/uuid.dart';
 import '../models/content_entry.dart';
 import '../models/content_image.dart';
 
+enum PurgeScope { day, month, year, all }
+
 class StorageService {
   StorageService._();
   static final StorageService instance = StorageService._();
@@ -90,7 +92,20 @@ class StorageService {
     var cover = resolveImagePath(entry.coverImagePath);
     cover ??= images.isNotEmpty ? images.first.path : null;
 
+    var createdAtMillis = entry.createdAtMillis;
+    if (createdAtMillis == null) {
+      final parts = entry.dateKey.split('-');
+      if (parts.length == 3) {
+        createdAtMillis = DateTime(
+          int.parse(parts[0]),
+          int.parse(parts[1]),
+          int.parse(parts[2]),
+        ).millisecondsSinceEpoch;
+      }
+    }
+
     return entry.copyWith(
+      createdAtMillis: createdAtMillis,
       coverImagePath: cover,
       clearCover: cover == null,
       images: images,
@@ -173,7 +188,11 @@ class StorageService {
 
   Future<ContentEntry> saveEntry(ContentEntry entry) async {
     await _ensureReady();
-    final normalized = _normalizeEntry(entry);
+    final normalized = _normalizeEntry(
+      entry.createdAtMillis == null
+          ? entry.copyWith(createdAtMillis: DateTime.now().millisecondsSinceEpoch)
+          : entry,
+    );
     final posts = List<ContentEntry>.from(_entriesByDate[normalized.dateKey] ?? []);
     final index = posts.indexWhere((post) => post.id == normalized.id);
     if (normalized.hasContent) {
@@ -182,7 +201,12 @@ class StorageService {
       } else {
         posts.add(normalized);
       }
-      posts.sort((a, b) => a.caption.compareTo(b.caption));
+      posts.sort((a, b) {
+        final aTime = a.createdAtMillis ?? 0;
+        final bTime = b.createdAtMillis ?? 0;
+        if (aTime != bTime) return bTime.compareTo(aTime);
+        return a.caption.compareTo(b.caption);
+      });
       _entriesByDate[normalized.dateKey] = posts;
     } else if (index >= 0) {
       posts.removeAt(index);
@@ -194,6 +218,63 @@ class StorageService {
     }
     await _saveEntries();
     return normalized;
+  }
+
+  static String dateKeyFor(DateTime date) {
+    final m = date.month.toString().padLeft(2, '0');
+    final d = date.day.toString().padLeft(2, '0');
+    return '${date.year}-$m-$d';
+  }
+
+  bool _dateKeyMatchesPurge(String dateKey, PurgeScope scope, DateTime? target) {
+    final parts = dateKey.split('-');
+    if (parts.length != 3) return false;
+    switch (scope) {
+      case PurgeScope.all:
+        return true;
+      case PurgeScope.day:
+        if (target == null) return false;
+        return dateKey == dateKeyFor(target);
+      case PurgeScope.month:
+        if (target == null) return false;
+        final month = target.month.toString().padLeft(2, '0');
+        return parts[0] == '${target.year}' && parts[1] == month;
+      case PurgeScope.year:
+        if (target == null) return false;
+        return parts[0] == '${target.year}';
+    }
+  }
+
+  int countPostsForPurge({required PurgeScope scope, DateTime? target}) {
+    var count = 0;
+    for (final entry in _entriesByDate.entries) {
+      if (_dateKeyMatchesPurge(entry.key, scope, target)) {
+        count += entry.value.length;
+      }
+    }
+    return count;
+  }
+
+  Future<int> purgeContent({required PurgeScope scope, DateTime? target}) async {
+    await _ensureReady();
+    var deletedPosts = 0;
+    final keys = _entriesByDate.keys.toList();
+
+    for (final dateKey in keys) {
+      if (!_dateKeyMatchesPurge(dateKey, scope, target)) continue;
+      final posts = List<ContentEntry>.from(_entriesByDate[dateKey] ?? []);
+      for (final post in posts) {
+        for (final image in post.images) {
+          await deleteImageFile(image.path);
+        }
+        await deleteImageFile(post.coverImagePath);
+        deletedPosts++;
+      }
+      _entriesByDate.remove(dateKey);
+    }
+
+    await _saveEntries();
+    return deletedPosts;
   }
 
   Future<void> deleteEntry(String dateKey, String entryId) async {

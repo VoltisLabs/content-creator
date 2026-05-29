@@ -6,6 +6,7 @@ class ContentEntry {
   const ContentEntry({
     required this.id,
     required this.dateKey,
+    this.createdAtMillis,
     this.caption = '',
     this.tags = const [],
     this.altDescription = '',
@@ -18,6 +19,7 @@ class ContentEntry {
 
   /// yyyy-MM-dd
   final String dateKey;
+  final int? createdAtMillis;
   final String caption;
   final List<String> tags;
   final String altDescription;
@@ -34,6 +36,8 @@ class ContentEntry {
   ContentEntry copyWith({
     String? id,
     String? dateKey,
+    int? createdAtMillis,
+    bool clearCreatedAt = false,
     String? caption,
     List<String>? tags,
     String? altDescription,
@@ -44,6 +48,9 @@ class ContentEntry {
     return ContentEntry(
       id: id ?? this.id,
       dateKey: dateKey ?? this.dateKey,
+      createdAtMillis: clearCreatedAt
+          ? null
+          : (createdAtMillis ?? this.createdAtMillis),
       caption: caption ?? this.caption,
       tags: tags ?? this.tags,
       altDescription: altDescription ?? this.altDescription,
@@ -56,12 +63,14 @@ class ContentEntry {
     return ContentEntry(
       id: const Uuid().v4(),
       dateKey: dateKey,
+      createdAtMillis: DateTime.now().millisecondsSinceEpoch,
     );
   }
 
   Map<String, dynamic> toJson() => {
         'id': id,
         'dateKey': dateKey,
+        'createdAtMillis': createdAtMillis,
         'caption': caption,
         'tags': tags,
         'altDescription': altDescription,
@@ -73,6 +82,7 @@ class ContentEntry {
     return ContentEntry(
       id: json['id'] as String? ?? const Uuid().v4(),
       dateKey: json['dateKey'] as String,
+      createdAtMillis: json['createdAtMillis'] as int?,
       caption: json['caption'] as String? ?? '',
       tags: (json['tags'] as List<dynamic>? ?? []).cast<String>(),
       altDescription: json['altDescription'] as String? ?? '',

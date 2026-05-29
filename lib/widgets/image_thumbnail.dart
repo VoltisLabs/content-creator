@@ -1,26 +1,27 @@
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../utils/app_haptics.dart';
+import 'post_image.dart';
 
 /// Small image tile with remove control: always visible on mobile, hover-only on desktop.
 class ImageThumbnail extends StatefulWidget {
   const ImageThumbnail({
     super.key,
     required this.path,
-    required this.onRemove,
+    this.onRemove,
     this.size = 72,
     this.selected = false,
     this.onTap,
+    this.onLongPress,
   });
 
   final String path;
-  final VoidCallback onRemove;
+  final VoidCallback? onRemove;
   final double size;
   final bool selected;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
 
   @override
   State<ImageThumbnail> createState() => _ImageThumbnailState();
@@ -61,6 +62,12 @@ class _ImageThumbnailState extends State<ImageThumbnail> {
           AppHaptics.tap();
           widget.onTap?.call();
         },
+        onLongPress: widget.onLongPress == null
+            ? null
+            : () {
+                AppHaptics.tap();
+                widget.onLongPress!();
+              },
         child: SizedBox(
           width: widget.size,
           height: widget.size,
@@ -76,20 +83,17 @@ class _ImageThumbnailState extends State<ImageThumbnail> {
                 fit: StackFit.expand,
                 clipBehavior: Clip.hardEdge,
                 children: [
-                  Image.file(
-                    File(widget.path),
+                  PostImage(
+                    path: widget.path,
                     width: imageSize,
                     height: imageSize,
                     fit: BoxFit.cover,
                     cacheWidth: (widget.size * 2).toInt(),
                     color: accent.withValues(alpha: 0.08),
                     colorBlendMode: BlendMode.softLight,
-                    errorBuilder: (context, error, stackTrace) => Icon(
-                      Icons.broken_image_outlined,
-                      color: accent.withValues(alpha: 0.45),
-                    ),
                   ),
-                  Positioned(
+                  if (widget.onRemove != null)
+                    Positioned(
                     top: 2,
                     right: 2,
                     child: AnimatedOpacity(
@@ -104,7 +108,7 @@ class _ImageThumbnailState extends State<ImageThumbnail> {
                           child: InkWell(
                             onTap: () {
                               AppHaptics.tap();
-                              widget.onRemove();
+                              widget.onRemove?.call();
                             },
                             child: const SizedBox(
                               width: 20,

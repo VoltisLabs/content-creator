@@ -1,10 +1,10 @@
-import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme_preset.dart';
 import '../utils/app_haptics.dart';
+import 'post_image.dart';
 
 class CalendarCell extends StatelessWidget {
   const CalendarCell({
@@ -18,6 +18,8 @@ class CalendarCell extends StatelessWidget {
     required this.postCount,
     required this.tagCount,
     required this.onTap,
+    this.weekdayLabel,
+    this.showWeekdayLabel = false,
   });
 
   final AppThemePreset preset;
@@ -29,6 +31,8 @@ class CalendarCell extends StatelessWidget {
   final int postCount;
   final int tagCount;
   final VoidCallback? onTap;
+  final String? weekdayLabel;
+  final bool showWeekdayLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -81,17 +85,18 @@ class CalendarCell extends StatelessWidget {
               fit: StackFit.expand,
               children: [
                 if (hasCover)
-                  Image.file(
-                    File(coverPath!),
-                    key: ValueKey(coverPath),
-                    fit: BoxFit.cover,
-                    gaplessPlayback: true,
-                    color: glass
-                        ? accent.withValues(alpha: 0.12)
-                        : null,
-                    colorBlendMode: glass ? BlendMode.softLight : null,
-                    errorBuilder: (context, error, stackTrace) =>
-                        _placeholder(theme, accent, secondary),
+                  Positioned.fill(
+                    child: PostImage(
+                      path: coverPath!,
+                      key: ValueKey(coverPath),
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      height: double.infinity,
+                      color: glass
+                          ? accent.withValues(alpha: 0.12)
+                          : null,
+                      colorBlendMode: glass ? BlendMode.softLight : null,
+                    ),
                   )
                 else if (hasContent)
                   _placeholder(theme, accent, secondary)
@@ -127,87 +132,68 @@ class CalendarCell extends StatelessWidget {
                     filter: ImageFilter.blur(sigmaX: 0.4, sigmaY: 0.4),
                     child: const SizedBox.expand(),
                   ),
-                Padding(
-                  padding: const EdgeInsets.all(6),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: dayBadgeColor,
-                              borderRadius: BorderRadius.circular(6),
-                              border: glass && !hasCover
-                                  ? Border.all(
-                                      color: accent.withValues(alpha: 0.35),
-                                    )
-                                  : null,
-                            ),
-                            child: Text(
-                              '$day',
-                              style: TextStyle(
-                                color: isToday || hasCover
-                                    ? Colors.white
-                                    : theme.colorScheme.onPrimary,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 12,
-                                height: 1.2,
-                              ),
-                            ),
-                          ),
-                          const Spacer(),
-                          if (postCount > 1)
-                            Flexible(
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: (hasCover ? Colors.black : accent)
-                                      .withValues(alpha: 0.55),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  '$postCount',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.clip,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          if (hasContent && tagCount > 0)
-                            Icon(
-                              Icons.local_offer_outlined,
-                              size: 14,
-                              color: hasCover
-                                  ? Colors.white70
-                                  : accent.withValues(alpha: 0.85),
-                            ),
-                        ],
-                      ),
-                      const Spacer(),
-                      if (hasContent && !hasCover)
-                        Align(
-                          alignment: Alignment.bottomLeft,
-                          child: Icon(
-                            Icons.edit_note,
-                            size: 18,
-                            color: secondary.withValues(alpha: 0.85),
-                          ),
-                        ),
-                    ],
+                Positioned(
+                  top: 6,
+                  left: 6,
+                  child: _DayBadge(
+                    day: day!,
+                    color: dayBadgeColor,
+                    textColor: isToday || hasCover
+                        ? Colors.white
+                        : theme.colorScheme.onPrimary,
+                    showBorder: glass && !hasCover,
+                    borderColor: accent.withValues(alpha: 0.35),
                   ),
                 ),
+                if (postCount > 1)
+                  Positioned(
+                    top: 6,
+                    right: hasContent && tagCount > 0 ? 24 : 6,
+                    child: _PostCountBadge(
+                      count: postCount,
+                      background: (hasCover ? Colors.black : accent)
+                          .withValues(alpha: 0.55),
+                    ),
+                  ),
+                if (hasContent && tagCount > 0)
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: Icon(
+                      Icons.local_offer_outlined,
+                      size: 14,
+                      color: hasCover
+                          ? Colors.white70
+                          : accent.withValues(alpha: 0.85),
+                    ),
+                  ),
+                if (showWeekdayLabel && weekdayLabel != null)
+                  Positioned(
+                    left: 6,
+                    bottom: 5,
+                    child: Text(
+                      weekdayLabel!,
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.2,
+                        color: hasCover
+                            ? Colors.white.withValues(alpha: 0.72)
+                            : theme.colorScheme.onSurface
+                                .withValues(alpha: 0.45),
+                      ),
+                    ),
+                  )
+                else if (hasContent && !hasCover)
+                  Positioned(
+                    left: 6,
+                    bottom: 6,
+                    child: Icon(
+                      Icons.edit_note,
+                      size: 18,
+                      color: secondary.withValues(alpha: 0.85),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -261,5 +247,73 @@ class CalendarCell extends StatelessWidget {
     };
     final b = third.withValues(alpha: preset.isGradient ? 0.28 : 0.32);
     return [a, b];
+  }
+}
+
+class _DayBadge extends StatelessWidget {
+  const _DayBadge({
+    required this.day,
+    required this.color,
+    required this.textColor,
+    required this.showBorder,
+    required this.borderColor,
+  });
+
+  final int day;
+  final Color color;
+  final Color textColor;
+  final bool showBorder;
+  final Color borderColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(6),
+        border: showBorder ? Border.all(color: borderColor) : null,
+      ),
+      child: Text(
+        '$day',
+        style: TextStyle(
+          color: textColor,
+          fontWeight: FontWeight.w600,
+          fontSize: 12,
+          height: 1.2,
+        ),
+      ),
+    );
+  }
+}
+
+class _PostCountBadge extends StatelessWidget {
+  const _PostCountBadge({
+    required this.count,
+    required this.background,
+  });
+
+  final int count;
+  final Color background;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        '$count',
+        maxLines: 1,
+        overflow: TextOverflow.clip,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+          fontSize: 11,
+        ),
+      ),
+    );
   }
 }

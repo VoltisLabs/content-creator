@@ -140,7 +140,6 @@ xcodebuild archive \
   -allowProvisioningUpdates \
   CODE_SIGN_STYLE=Automatic \
   DEVELOPMENT_TEAM="${TEAM_ID}" \
-  PRODUCT_BUNDLE_IDENTIFIER="${BUNDLE_ID}" \
   -derivedDataPath "${PROJECT_ROOT}/build/ios_derived_data" \
   | tee /tmp/testflight_archive_contentcalendar.log
 popd >/dev/null

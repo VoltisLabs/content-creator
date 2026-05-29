@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -6,23 +7,25 @@ import 'package:sensors_plus/sensors_plus.dart';
 
 import '../theme/calendar_ambient_mode.dart';
 
-/// Small tile preview for settings theme picker.
+/// Small tile preview for settings theme picker (static frame — avoids 26 tickers).
 class AmbientThemePreview extends StatelessWidget {
   const AmbientThemePreview({
     super.key,
     required this.mode,
-    this.time = 0,
+    this.time,
   });
 
   final CalendarAmbientMode mode;
-  final double time;
+
+  /// Optional animation phase; defaults to a stable offset per mode.
+  final double? time;
 
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
       painter: _AmbientPainter(
         mode: mode,
-        time: time,
+        time: time ?? mode.index * 0.65,
         tiltX: 0,
         tiltY: 0,
         palette: mode.palette,
@@ -54,6 +57,7 @@ class CalendarAmbientBackdrop extends StatefulWidget {
 class _CalendarAmbientBackdropState extends State<CalendarAmbientBackdrop>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
+  StreamSubscription<AccelerometerEvent>? _accelerometerSub;
   double _tiltX = 0;
   double _tiltY = 0;
 
@@ -62,21 +66,27 @@ class _CalendarAmbientBackdropState extends State<CalendarAmbientBackdrop>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 24),
+      duration: const Duration(seconds: 18),
     )..repeat();
-    if (widget.mode.usesGyro) {
-      accelerometerEventStream().listen((event) {
-        if (!mounted) return;
-        setState(() {
-          _tiltX = (event.x / 12).clamp(-1.0, 1.0);
-          _tiltY = (event.y / 12).clamp(-1.0, 1.0);
-        });
+    _bindAccelerometer();
+  }
+
+  void _bindAccelerometer() {
+    _accelerometerSub?.cancel();
+    _accelerometerSub = null;
+    if (!widget.mode.usesGyro) return;
+    _accelerometerSub = accelerometerEventStream().listen((event) {
+      if (!mounted) return;
+      setState(() {
+        _tiltX = (event.x / 12).clamp(-1.0, 1.0);
+        _tiltY = (event.y / 12).clamp(-1.0, 1.0);
       });
-    }
+    });
   }
 
   @override
   void dispose() {
+    _accelerometerSub?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -87,6 +97,7 @@ class _CalendarAmbientBackdropState extends State<CalendarAmbientBackdrop>
     if (oldWidget.mode != widget.mode) {
       _tiltX = 0;
       _tiltY = 0;
+      _bindAccelerometer();
     }
   }
 
@@ -104,7 +115,7 @@ class _CalendarAmbientBackdropState extends State<CalendarAmbientBackdrop>
               return CustomPaint(
                 painter: _AmbientPainter(
                   mode: widget.mode,
-                  time: _controller.value * 24,
+                  time: _controller.value * 18,
                   tiltX: _tiltX,
                   tiltY: _tiltY,
                   palette: widget.mode.palette,
@@ -200,6 +211,16 @@ class _AmbientPainter extends CustomPainter {
         _paintGyroBlocks(canvas, size);
       case CalendarAmbientMode.meshAurora:
         _paintMesh(canvas, size);
+      case CalendarAmbientMode.cherryBlossom:
+        _paintCherryBlossom(canvas, size);
+      case CalendarAmbientMode.crystalHaze:
+        _paintCrystalHaze(canvas, size);
+      case CalendarAmbientMode.sandstorm:
+        _paintSandstorm(canvas, size);
+      case CalendarAmbientMode.electricVeil:
+        _paintElectricVeil(canvas, size);
+      case CalendarAmbientMode.midnightBloom:
+        _paintMidnightBloom(canvas, size);
     }
 
     canvas.drawRect(
@@ -326,13 +347,14 @@ class _AmbientPainter extends CustomPainter {
 
   void _paintBokeh(Canvas canvas, Size size) {
     for (var i = 0; i < 18; i++) {
-      final x = _pseudo(i, 20) * size.width;
-      final y = _pseudo(i, 21) * size.height;
-      final r = 20 + _pseudo(i, 22) * 50;
+      final drift = math.sin(time * 0.7 + i * 1.3) * 12;
+      final x = _pseudo(i, 20) * size.width + drift;
+      final y = _pseudo(i, 21) * size.height + math.cos(time * 0.5 + i) * 10;
+      final r = 20 + _pseudo(i, 22) * 50 + math.sin(time + i) * 6;
       canvas.drawCircle(
         Offset(x, y),
         r,
-        Paint()..color = palette.accent.withValues(alpha: 0.06 + _pseudo(i, 23) * 0.08),
+        Paint()..color = palette.accent.withValues(alpha: 0.06 + _pseudo(i, 23) * 0.1),
       );
     }
   }
@@ -351,16 +373,17 @@ class _AmbientPainter extends CustomPainter {
     for (var i = 0; i < 24; i++) {
       final cx = _pseudo(i, 30) * size.width;
       final cy = _pseudo(i, 31) * size.height;
+      final angle = time * 0.4 + i * 0.5;
       final path = Path()
-        ..moveTo(cx, cy - 20)
-        ..lineTo(cx + 16, cy + 14)
-        ..lineTo(cx - 16, cy + 14)
+        ..moveTo(cx + math.sin(angle) * 20, cy - math.cos(angle) * 20)
+        ..lineTo(cx + math.cos(angle) * 16, cy + math.sin(angle) * 14)
+        ..lineTo(cx - math.cos(angle) * 16, cy + math.sin(angle) * 14)
         ..close();
       canvas.drawPath(
         path,
         Paint()
           ..color = Color.lerp(palette.accent, palette.accent2, _pseudo(i, 32))!
-              .withValues(alpha: 0.12),
+              .withValues(alpha: 0.1 + math.sin(time * 2 + i) * 0.06),
       );
     }
   }
@@ -393,10 +416,11 @@ class _AmbientPainter extends CustomPainter {
   void _paintForest(Canvas canvas, Size size) {
     _paintBokeh(canvas, size);
     for (var i = 0; i < 12; i++) {
-      final x = size.width * (i / 12);
+      final sway = math.sin(time * 1.2 + i) * 6;
+      final x = size.width * (i / 12) + sway;
       canvas.drawRect(
         Rect.fromLTWH(x, size.height * 0.55, 8, size.height * 0.45),
-        Paint()..color = palette.accent.withValues(alpha: 0.12),
+        Paint()..color = palette.accent.withValues(alpha: 0.12 + math.sin(time + i) * 0.05),
       );
     }
   }
@@ -476,16 +500,105 @@ class _AmbientPainter extends CustomPainter {
   void _paintMesh(Canvas canvas, Size size) {
     final paint = Paint()
       ..shader = LinearGradient(
-        begin: Alignment(math.cos(time), -1),
-        end: Alignment(math.sin(time), 1),
+        begin: Alignment(math.cos(time * 1.2), -1),
+        end: Alignment(math.sin(time * 1.2), 1),
         colors: [
-          palette.accent.withValues(alpha: 0.25),
-          palette.accent2.withValues(alpha: 0.2),
-          palette.glow.withValues(alpha: 0.15),
+          palette.accent.withValues(alpha: 0.3),
+          palette.accent2.withValues(alpha: 0.25),
+          palette.glow.withValues(alpha: 0.2),
         ],
       ).createShader(Offset.zero & size);
     canvas.drawRect(Offset.zero & size, paint);
-    _paintAurora(canvas, size, 0.45);
+    _paintAurora(canvas, size, 0.55);
+  }
+
+  void _paintCherryBlossom(Canvas canvas, Size size) {
+    for (var i = 0; i < 55; i++) {
+      final x = _pseudo(i, 60) * size.width + math.sin(time * 0.8 + i) * 20;
+      final y = ((time * 28 + _pseudo(i, 61) * size.height) % (size.height + 20)) - 10;
+      canvas.drawCircle(
+        Offset(x, y),
+        2.5 + _pseudo(i, 62) * 3,
+        Paint()..color = palette.accent.withValues(alpha: 0.35 + _pseudo(i, 63) * 0.25),
+      );
+    }
+    _paintSilk(canvas, size);
+  }
+
+  void _paintCrystalHaze(Canvas canvas, Size size) {
+    for (var i = 0; i < 40; i++) {
+      final x = _pseudo(i, 70) * size.width;
+      final y = _pseudo(i, 71) * size.height;
+      final pulse = 0.5 + 0.5 * math.sin(time * 2.5 + i);
+      canvas.drawCircle(
+        Offset(x + math.sin(time + i) * 8, y),
+        3 + pulse * 5,
+        Paint()..color = palette.glow.withValues(alpha: 0.08 + pulse * 0.15),
+      );
+    }
+    _paintAurora(canvas, size, 0.5);
+  }
+
+  void _paintSandstorm(Canvas canvas, Size size) {
+    for (var i = 0; i < 90; i++) {
+      final x = _pseudo(i, 80) * size.width;
+      final len = 6 + _pseudo(i, 81) * 14;
+      final y = ((time * 120 + _pseudo(i, 82) * size.height) % (size.height + len)) - len;
+      canvas.drawLine(
+        Offset(x + math.sin(time + i) * 12, y),
+        Offset(x + len, y + 2),
+        Paint()
+          ..color = palette.accent.withValues(alpha: 0.2)
+          ..strokeWidth = 1.2,
+      );
+    }
+    final haze = Paint()
+      ..shader = RadialGradient(
+        center: Alignment(0.2 + math.sin(time * 0.3) * 0.2, 0.3),
+        radius: 1.1,
+        colors: [
+          palette.glow.withValues(alpha: 0.18),
+          palette.base,
+        ],
+      ).createShader(Offset.zero & size);
+    canvas.drawRect(Offset.zero & size, haze);
+  }
+
+  void _paintElectricVeil(Canvas canvas, Size size) {
+    _paintNeon(canvas, size);
+    for (var i = 0; i < 6; i++) {
+      final path = Path();
+      final baseY = size.height * (0.15 + i * 0.14);
+      path.moveTo(0, baseY);
+      for (var x = 0.0; x <= size.width; x += 14) {
+        path.lineTo(
+          x,
+          baseY + math.sin((x / size.width * 8 * math.pi) + time * 3 + i) * 10,
+        );
+      }
+      canvas.drawPath(
+        path,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5
+          ..color = palette.glow.withValues(alpha: 0.25),
+      );
+    }
+  }
+
+  void _paintMidnightBloom(Canvas canvas, Size size) {
+    _paintStarfield(canvas, size);
+    _paintBokeh(canvas, size);
+    _paintAurora(canvas, size, 0.75);
+    for (var i = 0; i < 20; i++) {
+      final x = size.width * 0.5 + math.sin(time * 0.6 + i) * size.width * 0.35;
+      final y = size.height * 0.4 + math.cos(time * 0.5 + i * 0.7) * size.height * 0.2;
+      canvas.drawCircle(
+        Offset(x, y),
+        30 + math.sin(time + i) * 12,
+        Paint()..color = palette.accent.withValues(alpha: 0.06),
+      );
+    }
   }
 
   double _pseudo(int seed, int salt) {

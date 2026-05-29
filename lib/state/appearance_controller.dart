@@ -53,6 +53,14 @@ class AppearanceController extends ChangeNotifier {
 
   void beginBatch() => _batching = true;
 
+  /// Clears unsaved theme picks when leaving Appearance without closing settings.
+  void discardPendingAppearance() {
+    _pendingKind = null;
+    _pendingPreset = null;
+    _pendingAmbient = null;
+    notifyListeners();
+  }
+
   void endBatch() {
     _batching = false;
 

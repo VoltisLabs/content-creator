@@ -21,7 +21,12 @@ enum CalendarAmbientMode {
   northernLights,
   silkWaves,
   gyroBlocks,
-  meshAurora;
+  meshAurora,
+  cherryBlossom,
+  crystalHaze,
+  sandstorm,
+  electricVeil,
+  midnightBloom;
 
   static const CalendarAmbientMode defaultHome = CalendarAmbientMode.aquatic;
 
@@ -46,6 +51,11 @@ enum CalendarAmbientMode {
         CalendarAmbientMode.silkWaves => 'Silk waves',
         CalendarAmbientMode.gyroBlocks => 'Gyro blocks',
         CalendarAmbientMode.meshAurora => 'Mesh aurora',
+        CalendarAmbientMode.cherryBlossom => 'Cherry blossom',
+        CalendarAmbientMode.crystalHaze => 'Crystal haze',
+        CalendarAmbientMode.sandstorm => 'Sandstorm',
+        CalendarAmbientMode.electricVeil => 'Electric veil',
+        CalendarAmbientMode.midnightBloom => 'Midnight bloom',
       };
 
   bool get usesGyro => this == CalendarAmbientMode.gyroBlocks;
@@ -178,6 +188,36 @@ enum CalendarAmbientMode {
             accent: Color(0xFF7C3AED),
             accent2: Color(0xFF06B6D4),
             glow: Color(0xFFEC4899),
+          ),
+        CalendarAmbientMode.cherryBlossom => const AmbientPalette(
+            base: Color(0xFF1A0A12),
+            accent: Color(0xFFF9A8D4),
+            accent2: Color(0xFFF472B6),
+            glow: Color(0xFFFDF2F8),
+          ),
+        CalendarAmbientMode.crystalHaze => const AmbientPalette(
+            base: Color(0xFF0C1222),
+            accent: Color(0xFF93C5FD),
+            accent2: Color(0xFFC4B5FD),
+            glow: Color(0xFFE0F2FE),
+          ),
+        CalendarAmbientMode.sandstorm => const AmbientPalette(
+            base: Color(0xFF1C1408),
+            accent: Color(0xFFFBBF24),
+            accent2: Color(0xFFF59E0B),
+            glow: Color(0xFFFDE68A),
+          ),
+        CalendarAmbientMode.electricVeil => const AmbientPalette(
+            base: Color(0xFF050814),
+            accent: Color(0xFF38BDF8),
+            accent2: Color(0xFFA78BFA),
+            glow: Color(0xFF22D3EE),
+          ),
+        CalendarAmbientMode.midnightBloom => const AmbientPalette(
+            base: Color(0xFF0A0618),
+            accent: Color(0xFF6366F1),
+            accent2: Color(0xFFEC4899),
+            glow: Color(0xFF818CF8),
           ),
       };
 }

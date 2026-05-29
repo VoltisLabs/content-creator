@@ -16,14 +16,17 @@ import '../widgets/paywall_sheet.dart';
 import '../widgets/calendar_nav_picker.dart';
 import '../widgets/calendar_cell.dart';
 import '../widgets/haptic_buttons.dart';
+import '../widgets/caption_search_sheet.dart';
 import '../widgets/import_link_sheet.dart';
 import '../widgets/mobile_calendar_dock.dart';
 import '../widgets/share_sheet.dart';
+import '../data/demo_content_data.dart';
 import 'day_posts_screen.dart';
 
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({
     super.key,
+    this.screenTitle = 'Content Calendar',
     required this.preset,
     required this.usesLiveHomeTheme,
     required this.violetDarkMode,
@@ -37,8 +40,12 @@ class CalendarScreen extends StatefulWidget {
     required this.stayOnTop,
     required this.onStayOnTopChanged,
     required this.onOpenSettings,
+    this.demoMode = false,
+    this.onEnterDemoContent,
+    this.onExitDemoContent,
   });
 
+  final String screenTitle;
   final AppThemePreset preset;
   final bool usesLiveHomeTheme;
   final bool violetDarkMode;
@@ -52,6 +59,9 @@ class CalendarScreen extends StatefulWidget {
   final bool stayOnTop;
   final ValueChanged<bool> onStayOnTopChanged;
   final VoidCallback onOpenSettings;
+  final bool demoMode;
+  final VoidCallback? onEnterDemoContent;
+  final VoidCallback? onExitDemoContent;
 
   @override
   State<CalendarScreen> createState() => _CalendarScreenState();
@@ -63,6 +73,7 @@ class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObse
   Map<String, List<ContentEntry>> _entriesByDate = {};
   double _gridScale = AppPreferences.defaultGridScale;
   bool _showMobileSlider = false;
+  bool _isPro = false;
 
   static const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -74,6 +85,13 @@ class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObse
     _focusedMonth = DateTime(now.year, now.month);
     _loadEntries();
     _loadGridScale();
+    _refreshPlanState();
+  }
+
+  Future<void> _refreshPlanState() async {
+    final isPro = await PlanService.instance.isPro;
+    if (!mounted) return;
+    setState(() => _isPro = isPro);
   }
 
   Future<void> _loadGridScale() async {
@@ -89,9 +107,22 @@ class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObse
   }
 
   @override
+  void didUpdateWidget(CalendarScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.demoMode != widget.demoMode) {
+      _loadEntries();
+    }
+  }
+
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _reloadEntries();
+      if (widget.demoMode) {
+        _loadEntries();
+      } else {
+        _reloadEntries();
+      }
+      unawaited(_refreshPlanState());
     }
   }
 
@@ -102,6 +133,14 @@ class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObse
   }
 
   void _loadEntries() {
+    if (widget.demoMode) {
+      final month = DemoContentData.currentMonth;
+      setState(() {
+        _focusedMonth = month;
+        _entriesByDate = DemoContentData.entriesForMonth(month);
+      });
+      return;
+    }
     setState(() => _entriesByDate = Map.from(_storage.entriesByDate));
   }
 
@@ -117,12 +156,14 @@ class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObse
   }
 
   Future<void> _previousMonth() async {
+    if (widget.demoMode) return;
     final target = DateTime(_focusedMonth.year, _focusedMonth.month - 1);
     if (!await _ensureMonthAllowed(target)) return;
     setState(() => _focusedMonth = target);
   }
 
   Future<void> _nextMonth() async {
+    if (widget.demoMode) return;
     final target = DateTime(_focusedMonth.year, _focusedMonth.month + 1);
     if (!await _ensureMonthAllowed(target)) return;
     setState(() => _focusedMonth = target);
@@ -150,6 +191,13 @@ class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObse
   }
 
   void _openSettings() => widget.onOpenSettings();
+
+  void _shareMonth() {
+    showShareMonthSheet(
+      context,
+      month: _focusedMonth,
+    );
+  }
 
   Widget _settingsButton() {
     return HapticIconButton(
@@ -192,16 +240,23 @@ class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObse
   }
 
   Future<void> _openDay(DateTime date) async {
+    final dateKey = DateFormat('yyyy-MM-dd').format(date);
+    final demoPosts = widget.demoMode
+        ? List<ContentEntry>.from(_entriesByDate[dateKey] ?? const [])
+        : null;
+
     await Navigator.push<void>(
       context,
       MaterialPageRoute(
         builder: (_) => DayPostsScreen(
           date: date,
           onChanged: _loadEntries,
+          postsOverride: demoPosts,
+          readOnly: widget.demoMode,
         ),
       ),
     );
-    if (!mounted) return;
+    if (!mounted || widget.demoMode) return;
     _loadEntries();
   }
 
@@ -285,10 +340,11 @@ class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObse
   double _cellHeight(double cellWidth) =>
       cellWidth * (1.1 - (_gridScale * 0.25));
 
-  bool _showWeekdayHeader(double availableWidth) {
-    if (!_isMobile) return true;
-    return _columnCount(availableWidth) >= 7;
-  }
+  int get _layoutColumnCount =>
+      columnCountForScale(_gridScale, desktop: _isDesktopLayout);
+
+  /// Mon–Sun row only when cells are smallest (7 columns); hidden when day shows in-cell.
+  bool get _showWeekdayHeader => _layoutColumnCount >= 7;
 
   List<DateTime?> _cellsForLayout(int columns) {
     if (columns >= 7) return _buildMonthGrid();
@@ -313,6 +369,8 @@ class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObse
         date.month == today.month &&
         date.day == today.day;
 
+    final showWeekdayInCell = _layoutColumnCount < 7;
+
     return CalendarCell(
       key: ValueKey('$dateKey-${primary?.coverImagePath ?? ''}-${posts.length}'),
       preset: widget.preset,
@@ -323,6 +381,8 @@ class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObse
       hasContent: posts.isNotEmpty,
       postCount: posts.length,
       tagCount: tagCount,
+      weekdayLabel: DateFormat('EEE').format(date),
+      showWeekdayLabel: showWeekdayInCell,
       onTap: () => _openDay(date),
     );
   }
@@ -386,8 +446,7 @@ class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObse
     final postCount = _postCountThisMonth();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bodyPadding = 40.0;
-    final gridWidth = MediaQuery.sizeOf(context).width - bodyPadding;
-    final showWeekdays = _showWeekdayHeader(gridWidth);
+    final showWeekdays = _showWeekdayHeader;
     final isMobile = _isMobile;
 
     final titleStyle = Theme.of(context).textTheme.titleLarge?.copyWith(
@@ -407,7 +466,7 @@ class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObse
       appBar: AppBar(
         titleSpacing: isMobile ? 20 : null,
         title: Text(
-          'Content Calendar',
+          widget.screenTitle,
           style: titleStyle,
         ),
         actions: [
@@ -431,7 +490,25 @@ class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObse
                 icon: isDark ? Icons.wb_sunny_rounded : Icons.nights_stay_rounded,
               ),
           ],
-          _settingsButton(),
+          if (!isMobile) _settingsButton(),
+          if (!widget.demoMode && !isMobile)
+            HapticIconButton(
+              tooltip: 'Search captions',
+              onPressed: () => showCaptionSearch(context),
+              icon: Icons.search_rounded,
+            ),
+          if (!isMobile) ...[
+            if (!widget.demoMode && widget.onEnterDemoContent != null)
+              HapticTextButton(
+                onPressed: widget.onEnterDemoContent,
+                child: const Text('Demo Content'),
+              ),
+            if (widget.demoMode && widget.onExitDemoContent != null)
+              HapticTextButton(
+                onPressed: widget.onExitDemoContent,
+                child: const Text('Calendar'),
+              ),
+          ],
           HapticTextButton(
             onPressed: _goToToday,
             child: const Text('Today'),
@@ -448,7 +525,7 @@ class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObse
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     RoundOutlinedIconButton(
-                      onPressed: _previousMonth,
+                      onPressed: widget.demoMode ? null : _previousMonth,
                       icon: Icons.chevron_left,
                     ),
                     Expanded(
@@ -456,7 +533,7 @@ class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObse
                         color: Colors.transparent,
                         child: HapticInkWell(
                           borderRadius: BorderRadius.circular(12),
-                          onTap: _openMonthPicker,
+                          onTap: widget.demoMode ? null : _openMonthPicker,
                           child: Padding(
                             padding: const EdgeInsets.symmetric(vertical: 6),
                             child: Column(
@@ -494,17 +571,16 @@ class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObse
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        RoundOutlinedIconButton(
-                          tooltip: 'Share this month',
-                          onPressed: () => showShareMonthSheet(
-                            context,
-                            month: _focusedMonth,
+                        if (!isMobile) ...[
+                          RoundOutlinedIconButton(
+                            tooltip: 'Share this month',
+                            onPressed: _shareMonth,
+                            icon: Icons.share_rounded,
                           ),
-                          icon: Icons.share_rounded,
-                        ),
-                        const SizedBox(width: 8),
+                          const SizedBox(width: 8),
+                        ],
                         RoundOutlinedIconButton(
-                          onPressed: _nextMonth,
+                          onPressed: widget.demoMode ? null : _nextMonth,
                           icon: Icons.chevron_right,
                         ),
                       ],
@@ -556,6 +632,13 @@ class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObse
                   },
                   gridScale: _gridScale,
                   onGridScaleChanged: _onGridScaleChanged,
+                  demoMode: widget.demoMode,
+                  onToggleDemo: widget.demoMode
+                      ? widget.onExitDemoContent
+                      : widget.onEnterDemoContent,
+                  onShareMonth: _shareMonth,
+                  onOpenSettings: _openSettings,
+                  showProBadgeOnShare: !widget.demoMode && !_isPro,
                   onImportLink: () {
                     AppHaptics.tap();
                     showImportLinkSheet(
@@ -563,7 +646,8 @@ class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObse
                       onImported: _handleImportedResult,
                     );
                   },
-                  showThemeToggle: widget.preset == AppThemePreset.violet,
+                  showThemeToggle:
+                      !widget.demoMode && widget.preset == AppThemePreset.violet,
                   isDarkTheme: isDark,
                   onToggleTheme: widget.onToggleVioletBrightness,
                 ),

@@ -7,7 +7,7 @@ import 'calendar_ambient_backdrop.dart';
 import 'palette_gradient_backdrop.dart';
 import 'settings_sheet.dart';
 
-/// Calendar home with settings as an overlay (never replaces the home route).
+/// Calendar home with optional demo content mode and settings overlay.
 class HomeShell extends StatefulWidget {
   const HomeShell({
     super.key,
@@ -31,7 +31,25 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   var _settingsVisible = false;
   var _settingsSession = 0;
-  var _homeReloadKey = 0;
+  var _calendarReloadKey = 0;
+  var _demoMode = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.appearance.addListener(_onAppearanceChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.appearance.removeListener(_onAppearanceChanged);
+    super.dispose();
+  }
+
+  void _onAppearanceChanged() {
+    if (!mounted || _settingsVisible) return;
+    setState(() {});
+  }
 
   void _openSettings() {
     widget.appearance.beginBatch();
@@ -41,19 +59,22 @@ class _HomeShellState extends State<HomeShell> {
     });
   }
 
-  /// Closes settings and rebuilds the entire home calendar tree.
   void _closeSettings({bool reloadHome = true}) {
-    widget.appearance.endBatch();
     if (!mounted) return;
-    setState(() {
-      _settingsVisible = false;
-      if (reloadHome) _homeReloadKey++;
+    setState(() => _settingsVisible = false);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.appearance.endBatch();
+      if (reloadHome) {
+        setState(() => _calendarReloadKey++);
+      }
     });
   }
 
-  /// Theme picked — apply immediately and reload home (no back navigation).
-  void _applyAppearanceAndClose() {
-    _closeSettings(reloadHome: true);
+  void _applyAppearanceInSettings() {}
+
+  void _setDemoMode(bool value) {
+    setState(() => _demoMode = value);
   }
 
   @override
@@ -69,6 +90,8 @@ class _HomeShellState extends State<HomeShell> {
     );
 
     final calendar = CalendarScreen(
+      key: ValueKey('calendar-$_calendarReloadKey'),
+      screenTitle: _demoMode ? 'Demo Content' : 'Content Calendar',
       preset: preset,
       usesLiveHomeTheme: usesLive,
       violetDarkMode: widget.violetDarkMode,
@@ -82,10 +105,18 @@ class _HomeShellState extends State<HomeShell> {
       stayOnTop: widget.stayOnTop,
       onStayOnTopChanged: widget.onStayOnTopChanged,
       onOpenSettings: _openSettings,
+      demoMode: _demoMode,
+      onEnterDemoContent: () => _setDemoMode(true),
+      onExitDemoContent: () => _setDemoMode(false),
     );
 
     final calendarTree = usesLive
         ? CalendarAmbientBackdrop(
+            key: ValueKey(
+              'live-${appearance.ambient.name}-'
+              '${appearance.customBackgroundPath}-'
+              '${appearance.useCustomBackground}',
+            ),
             mode: appearance.ambient,
             customBackgroundPath: appearance.customBackgroundPath,
             useCustomPhoto: appearance.useCustomBackground &&
@@ -93,17 +124,21 @@ class _HomeShellState extends State<HomeShell> {
             child: calendar,
           )
         : usesGradientPalette
-            ? PaletteGradientBackdrop(preset: preset, child: calendar)
+            ? PaletteGradientBackdrop(
+                key: ValueKey('gradient-$preset'),
+                preset: preset,
+                child: calendar,
+              )
             : calendar;
 
     final chromeBackground = usesLive || usesGradientPalette
         ? Colors.transparent
         : theme.scaffoldBackgroundColor;
 
-    final homeContent = KeyedSubtree(
-      key: ValueKey('home-reload-$_homeReloadKey'),
-      child: Material(
-        color: chromeBackground,
+    final homeContent = Material(
+      color: chromeBackground,
+      child: TickerMode(
+        enabled: !_settingsVisible,
         child: calendarTree,
       ),
     );
@@ -125,7 +160,11 @@ class _HomeShellState extends State<HomeShell> {
                   stayOnTop: widget.stayOnTop,
                   onStayOnTopChanged: widget.onStayOnTopChanged,
                   onClose: () => _closeSettings(),
-                  onAppearanceApplied: _applyAppearanceAndClose,
+                  onAppearanceApplied: _applyAppearanceInSettings,
+                  onStorageChanged: () {
+                    if (!mounted) return;
+                    setState(() => _calendarReloadKey++);
+                  },
                 ),
               ),
           ],

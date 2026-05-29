@@ -25,21 +25,10 @@ Future<bool> showPaywallScreen(
     PageRouteBuilder<bool>(
       pageBuilder: (context, animation, secondaryAnimation) =>
           _PaywallScreen(feature: feature),
-      transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        final slide = Tween<Offset>(
-          begin: const Offset(1, 0),
-          end: Offset.zero,
-        ).animate(
-          CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeInOutCubic,
-            reverseCurve: Curves.easeInOutCubic,
-          ),
-        );
-        return SlideTransition(position: slide, child: child);
-      },
-      transitionDuration: const Duration(milliseconds: 280),
-      reverseTransitionDuration: const Duration(milliseconds: 250),
+      transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+          child,
+      transitionDuration: Duration.zero,
+      reverseTransitionDuration: Duration.zero,
     ),
   );
   return upgraded ?? false;
@@ -74,7 +63,7 @@ class _PaywallScreen extends StatelessWidget {
                   ),
                   Expanded(
                     child: Text(
-                      'Plans & Pro',
+                      'Plans',
                       style: theme.textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
@@ -130,7 +119,10 @@ class _PaywallSheetBodyState extends State<PaywallSheetBody> {
   void _onSubscriptionChanged() {
     if (!mounted) return;
     if (_subscriptions.isPro && !widget.embeddedInSettings) {
-      Navigator.of(context).pop(true);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).pop(true);
+      });
       return;
     }
     setState(() {});

@@ -9,20 +9,29 @@ class RoundOutlinedIconButton extends StatelessWidget {
     required this.icon,
     required this.onPressed,
     this.tooltip,
+    this.selected = false,
   });
 
   final IconData icon;
   final VoidCallback? onPressed;
   final String? tooltip;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return IconButton.outlined(
       tooltip: tooltip,
       onPressed: AppHaptics.wrap(onPressed),
       style: IconButton.styleFrom(
         shape: const CircleBorder(),
         minimumSize: const Size(40, 40),
+        backgroundColor: selected
+            ? theme.colorScheme.primary.withValues(alpha: isDark ? 0.28 : 0.14)
+            : null,
+        foregroundColor: selected ? theme.colorScheme.primary : null,
       ),
       icon: Icon(icon),
     );

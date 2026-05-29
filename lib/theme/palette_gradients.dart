@@ -1,10 +1,24 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import 'app_theme_preset.dart';
 
+typedef GradientPaletteSpec = ({
+  Color base,
+  Color hint,
+  Color hint2,
+  Alignment begin,
+  Alignment end,
+  double homeStrength,
+  double chipStrength,
+});
+
 /// Full-screen palette gradients and chip swatches for appearance settings.
 abstract final class PaletteGradients {
   PaletteGradients._();
+
+  static GradientPaletteSpec? specFor(AppThemePreset preset) => _specs[preset];
 
   static LinearGradient? homeBackground(AppThemePreset preset) {
     final spec = _specs[preset];
@@ -12,9 +26,34 @@ abstract final class PaletteGradients {
     return _ambientGradient(
       base: spec.base,
       hint: spec.hint,
+      hint2: spec.hint2,
       hintStrength: spec.homeStrength,
       begin: spec.begin,
       end: spec.end,
+      phase: 0,
+    );
+  }
+
+  static LinearGradient animatedHomeBackground({
+    required GradientPaletteSpec spec,
+    required double phase,
+  }) {
+    final begin = Alignment(
+      spec.begin.x + math.sin(phase) * 0.15,
+      spec.begin.y + math.cos(phase * 0.7) * 0.12,
+    );
+    final end = Alignment(
+      spec.end.x + math.cos(phase * 0.9) * 0.12,
+      spec.end.y + math.sin(phase * 0.8) * 0.15,
+    );
+    return _ambientGradient(
+      base: spec.base,
+      hint: spec.hint,
+      hint2: spec.hint2,
+      hintStrength: spec.homeStrength,
+      begin: begin,
+      end: end,
+      phase: phase,
     );
   }
 
@@ -27,11 +66,20 @@ abstract final class PaletteGradients {
         gradient: _ambientGradient(
           base: spec.base,
           hint: spec.hint,
+          hint2: spec.hint2,
           hintStrength: spec.chipStrength,
           begin: spec.begin,
           end: spec.end,
+          phase: 0,
         ),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+        boxShadow: [
+          BoxShadow(
+            color: spec.hint.withValues(alpha: 0.2),
+            blurRadius: 8,
+            spreadRadius: -2,
+          ),
+        ],
       );
     }
     return BoxDecoration(
@@ -60,21 +108,26 @@ abstract final class PaletteGradients {
         _ => Colors.white54,
       };
 
-  /// Dark base with a gentle colour wash — readable, not blinding.
   static LinearGradient _ambientGradient({
     required Color base,
     required Color hint,
+    required Color hint2,
     required double hintStrength,
-    Alignment begin = Alignment.topLeft,
-    Alignment end = Alignment.bottomRight,
+    required Alignment begin,
+    required Alignment end,
+    required double phase,
   }) {
-    final mid = Color.lerp(base, hint, hintStrength)!;
-    final whisper = Color.lerp(base, hint, hintStrength * 0.5)!;
+    final pulse = 0.85 + 0.15 * math.sin(phase);
+    final strength = hintStrength * pulse;
+    final mid = Color.lerp(base, hint, strength)!;
+    final peak = Color.lerp(mid, hint2, strength * 0.85)!;
+    final whisper = Color.lerp(base, hint, strength * 0.45)!;
+    final rim = Color.lerp(base, hint2, strength * 0.25)!;
     return LinearGradient(
       begin: begin,
       end: end,
-      colors: [base, whisper, mid, base],
-      stops: const [0.0, 0.4, 0.65, 1.0],
+      colors: [base, rim, whisper, mid, peak, mid, base],
+      stops: const [0.0, 0.18, 0.35, 0.52, 0.68, 0.82, 1.0],
     );
   }
 
@@ -84,84 +137,94 @@ abstract final class PaletteGradients {
 
   static final _specs = {
     AppThemePreset.gradientSunrise: (
-      base: const Color(0xFF1C1210),
+      base: const Color(0xFF140C08),
       hint: const Color(0xFFF97316),
+      hint2: const Color(0xFFFBBF24),
       begin: _diag.$1,
       end: _diag.$2,
-      homeStrength: 0.13,
-      chipStrength: 0.22,
+      homeStrength: 0.22,
+      chipStrength: 0.34,
     ),
     AppThemePreset.gradientOcean: (
-      base: const Color(0xFF041E2E),
+      base: const Color(0xFF021018),
       hint: const Color(0xFF06B6D4),
+      hint2: const Color(0xFF3B82F6),
       begin: _topDown.$1,
       end: _topDown.$2,
-      homeStrength: 0.12,
-      chipStrength: 0.20,
+      homeStrength: 0.20,
+      chipStrength: 0.32,
     ),
     AppThemePreset.gradientForest: (
-      base: const Color(0xFF0F1A14),
+      base: const Color(0xFF081410),
       hint: const Color(0xFF22C55E),
+      hint2: const Color(0xFF84CC16),
       begin: _diag.$1,
       end: _diag.$2,
-      homeStrength: 0.11,
-      chipStrength: 0.19,
+      homeStrength: 0.19,
+      chipStrength: 0.30,
     ),
     AppThemePreset.gradientBerry: (
-      base: const Color(0xFF1A0A14),
+      base: const Color(0xFF140610),
       hint: const Color(0xFFDB2777),
+      hint2: const Color(0xFFA855F7),
       begin: _diagFlip.$1,
       end: _diagFlip.$2,
-      homeStrength: 0.12,
-      chipStrength: 0.20,
+      homeStrength: 0.21,
+      chipStrength: 0.33,
     ),
     AppThemePreset.gradientGold: (
-      base: const Color(0xFF1A1608),
+      base: const Color(0xFF121008),
       hint: const Color(0xFFEAB308),
+      hint2: const Color(0xFFF59E0B),
       begin: _diag.$1,
       end: _diag.$2,
-      homeStrength: 0.14,
-      chipStrength: 0.23,
+      homeStrength: 0.23,
+      chipStrength: 0.35,
     ),
     AppThemePreset.gradientSlate: (
-      base: const Color(0xFF0F172A),
+      base: const Color(0xFF0A1018),
       hint: const Color(0xFF64748B),
+      hint2: const Color(0xFF94A3B8),
       begin: _topDown.$1,
       end: _topDown.$2,
-      homeStrength: 0.10,
-      chipStrength: 0.17,
+      homeStrength: 0.17,
+      chipStrength: 0.28,
     ),
     AppThemePreset.gradientCoral: (
-      base: const Color(0xFF1F1010),
+      base: const Color(0xFF180A0A),
       hint: const Color(0xFFFF6B6B),
+      hint2: const Color(0xFFF472B6),
       begin: _diag.$1,
       end: _diag.$2,
-      homeStrength: 0.12,
-      chipStrength: 0.20,
+      homeStrength: 0.21,
+      chipStrength: 0.32,
     ),
     AppThemePreset.gradientNeon: (
-      base: const Color(0xFF070B14),
+      base: const Color(0xFF04060E),
       hint: const Color(0xFF22D3EE),
+      hint2: const Color(0xFF52FFA8),
       begin: _diag.$1,
       end: _diag.$2,
-      homeStrength: 0.11,
-      chipStrength: 0.19,
+      homeStrength: 0.20,
+      chipStrength: 0.31,
     ),
     AppThemePreset.gradientLagoon: (
-      base: const Color(0xFF042F2E),
+      base: const Color(0xFF031E1C),
       hint: const Color(0xFF10B981),
+      hint2: const Color(0xFF2DD4BF),
       begin: _topDown.$1,
       end: _topDown.$2,
-      homeStrength: 0.12,
-      chipStrength: 0.20,
+      homeStrength: 0.20,
+      chipStrength: 0.31,
     ),
     AppThemePreset.gradientTwilight: (
-      base: const Color(0xFF120B24),
+      base: const Color(0xFF0E0820),
       hint: const Color(0xFF8B5CF6),
+      hint2: const Color(0xFFEC4899),
       begin: _diag.$1,
       end: _diag.$2,
-      homeStrength: 0.13,
-      chipStrength: 0.21,
+      homeStrength: 0.22,
+      chipStrength: 0.34,
     ),
   };
 }

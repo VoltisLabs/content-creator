@@ -12,6 +12,11 @@ class MobileCalendarDock extends StatelessWidget {
     required this.gridScale,
     required this.onGridScaleChanged,
     required this.onImportLink,
+    required this.onShareMonth,
+    required this.onOpenSettings,
+    this.demoMode = false,
+    this.onToggleDemo,
+    this.showProBadgeOnShare = false,
     this.onToggleTheme,
     this.showThemeToggle = false,
     this.isDarkTheme = false,
@@ -22,6 +27,11 @@ class MobileCalendarDock extends StatelessWidget {
   final double gridScale;
   final ValueChanged<double> onGridScaleChanged;
   final VoidCallback onImportLink;
+  final VoidCallback onShareMonth;
+  final VoidCallback onOpenSettings;
+  final bool demoMode;
+  final VoidCallback? onToggleDemo;
+  final bool showProBadgeOnShare;
   final VoidCallback? onToggleTheme;
   final bool showThemeToggle;
   final bool isDarkTheme;
@@ -79,6 +89,21 @@ class MobileCalendarDock extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
+                    if (onToggleDemo != null)
+                      _DockButton(
+                        tooltip: demoMode ? 'Content Calendar' : 'Demo content',
+                        icon: demoMode
+                            ? Icons.calendar_month_rounded
+                            : Icons.collections_rounded,
+                        selected: demoMode,
+                        badgeLabel: demoMode ? null : 'DEMO',
+                        onPressed: onToggleDemo!,
+                      ),
+                    _DockButton(
+                      tooltip: 'Import shared link',
+                      icon: Icons.add_link_rounded,
+                      onPressed: onImportLink,
+                    ),
                     _DockButton(
                       tooltip: showSlider ? 'Hide thumbnail size' : 'Thumbnail size',
                       icon: Icons.dashboard_customize_rounded,
@@ -86,9 +111,15 @@ class MobileCalendarDock extends StatelessWidget {
                       onPressed: onToggleSlider,
                     ),
                     _DockButton(
-                      tooltip: 'Import shared link',
-                      icon: Icons.add_link_rounded,
-                      onPressed: onImportLink,
+                      tooltip: 'Share this month',
+                      icon: Icons.share_rounded,
+                      onPressed: onShareMonth,
+                      showProBadge: showProBadgeOnShare,
+                    ),
+                    _DockButton(
+                      tooltip: 'Settings',
+                      icon: Icons.settings_rounded,
+                      onPressed: onOpenSettings,
                     ),
                     if (showThemeToggle && onToggleTheme != null)
                       _DockButton(
@@ -115,12 +146,16 @@ class _DockButton extends StatelessWidget {
     required this.icon,
     required this.onPressed,
     this.selected = false,
+    this.badgeLabel,
+    this.showProBadge = false,
   });
 
   final String tooltip;
   final IconData icon;
   final VoidCallback onPressed;
   final bool selected;
+  final String? badgeLabel;
+  final bool showProBadge;
 
   @override
   Widget build(BuildContext context) {
@@ -140,10 +175,36 @@ class _DockButton extends StatelessWidget {
       style: IconButton.styleFrom(
         backgroundColor: bg,
         foregroundColor: fg,
-        minimumSize: const Size(48, 48),
+        minimumSize: const Size(44, 44),
         shape: const CircleBorder(),
       ),
-      icon: Icon(icon, weight: 500),
+      icon: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Icon(icon, weight: 500),
+          if (badgeLabel != null || showProBadge)
+            Positioned(
+              top: -5,
+              right: -8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  badgeLabel ?? 'PRO',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onPrimary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 8,
+                    height: 1,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
