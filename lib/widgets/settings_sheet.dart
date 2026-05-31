@@ -1,15 +1,12 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../constants/app_version.dart';
-import '../models/voltis_plan.dart';
 import '../constants/legal_urls.dart';
+import '../models/voltis_plan.dart';
 import '../screens/legal_document_screen.dart';
 import '../services/app_preferences.dart';
-import '../services/custom_background_service.dart';
 import '../services/desktop_window.dart' show isDesktop;
 import '../services/plan_service.dart';
 import '../services/storage_service.dart';
@@ -21,7 +18,6 @@ import '../theme/app_theme_preset.dart';
 import '../theme/calendar_ambient_mode.dart';
 import '../utils/app_haptics.dart';
 import 'calendar_ambient_backdrop.dart';
-import 'paywall_sheet.dart';
 import 'settings_account_page.dart';
 import 'settings_plans_page.dart';
 import 'theme_preset_chip.dart';
@@ -114,14 +110,9 @@ class SettingsFlow extends StatefulWidget {
 class _SettingsFlowState extends State<SettingsFlow> {
   final _navKey = GlobalKey<NavigatorState>();
 
-  void _push(String route) {
-    final nav = _navKey.currentState;
-    if (nav == null) return;
-    nav.pushNamed(route);
-  }
+  void _push(String route) => _navKey.currentState!.pushNamed(route);
 
   AppThemePreset get _previewPreset => widget.appearance.settingsUiPreset;
-  bool get _previewUseCustomBg => widget.appearance.settingsUseCustomBackground;
 
   void _closeSettings() {
     AppHaptics.tap();
@@ -145,11 +136,6 @@ class _SettingsFlowState extends State<SettingsFlow> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _previewUseCustomBgChanged(bool value) async {
-    await widget.appearance.setUseCustomBackground(value);
-    if (mounted) setState(() {});
-  }
-
   @override
   Widget build(BuildContext context) {
     return _SettingsCloseScope(
@@ -167,65 +153,57 @@ class _SettingsFlowState extends State<SettingsFlow> {
               child: Navigator(
                 key: _navKey,
           initialRoute: '/',
-          onGenerateRoute: (settings) {
-            final name = settings.name ?? '/';
-            final Widget page;
-            if (name == '/appearance') {
-              page = _SettingsAppearancePage(
-                appearance: widget.appearance,
-                onPresetSelected: _applyPreset,
-                onAmbientSelected: _applyAmbient,
-              );
-            } else if (name == '/background') {
-              page = _SettingsBackgroundPage(
-                useCustomBackground: _previewUseCustomBg,
-                onUseCustomBackgroundChanged: _previewUseCustomBgChanged,
-                onCustomBackgroundChanged:
-                    widget.appearance.refreshCustomBackgroundPath,
-                onOpenPaywall: () => _push('/plans'),
-              );
-            } else if (name == '/sound') {
-              page = const _SettingsSoundPage();
-            } else if (name == '/window') {
-              page = _SettingsWindowPage(
-                stayOnTop: widget.stayOnTop,
-                onStayOnTopChanged: widget.onStayOnTopChanged,
-              );
-            } else if (name == '/account') {
-              page = _SettingsAccountShell(onOpenPlans: () => _push('/plans'));
-            } else if (name == '/plans') {
-              page = const _SettingsPlansShell();
-            } else if (name == '/about') {
-              page = const _SettingsAboutPage();
-            } else if (name == '/help') {
-              page = const _SettingsHelpPage();
-            } else if (name == '/bug') {
-              page = const _SettingsReportBugPage();
-            } else if (name == '/purge') {
-              page = _SettingsPurgePage(
-                onPurged: () {
-                  widget.onStorageChanged?.call();
-                  widget.onClose();
-                },
-              );
-            } else {
-              page = _SettingsHomePage(
-                onOpenAccount: () => _push('/account'),
-                onOpenPlans: () => _push('/plans'),
-                onOpenAppearance: _pushAppearance,
-                onOpenBackground: () => _push('/background'),
-                onOpenSound: () => _push('/sound'),
-                onOpenWindow: isDesktop ? () => _push('/window') : null,
-                onOpenAbout: () => _push('/about'),
-                onOpenHelp: () => _push('/help'),
-                onOpenReportBug: () => _push('/bug'),
-                onOpenPurge: () => _push('/purge'),
-              );
+          onGenerateRoute: (route) {
+            Widget page;
+            switch (route.name) {
+              case '/appearance':
+                page = _SettingsAppearancePage(
+                  appearance: widget.appearance,
+                  onPresetSelected: _applyPreset,
+                  onAmbientSelected: _applyAmbient,
+                );
+              case '/sound':
+                page = const _SettingsSoundPage();
+              case '/window':
+                page = _SettingsWindowPage(
+                  stayOnTop: widget.stayOnTop,
+                  onStayOnTopChanged: widget.onStayOnTopChanged,
+                );
+              case '/account':
+                page = _SettingsAccountShell(onOpenPlans: () => _push('/plans'));
+              case '/plans':
+                page = const _SettingsPlansShell();
+              case '/about':
+                page = const _SettingsAboutPage();
+              case '/help':
+                page = const _SettingsHelpPage();
+              case '/bug':
+                page = const _SettingsReportBugPage();
+              case '/purge':
+                page = _SettingsPurgePage(
+                  onPurged: () {
+                    widget.onStorageChanged?.call();
+                    widget.onClose();
+                  },
+                );
+              case '/':
+              default:
+                page = _SettingsHomePage(
+                  onOpenAccount: () => _push('/account'),
+                  onOpenPlans: () => _push('/plans'),
+                  onOpenAppearance: _pushAppearance,
+                  onOpenSound: () => _push('/sound'),
+                  onOpenWindow: isDesktop ? () => _push('/window') : null,
+                  onOpenAbout: () => _push('/about'),
+                  onOpenHelp: () => _push('/help'),
+                  onOpenReportBug: () => _push('/bug'),
+                  onOpenPurge: () => _push('/purge'),
+                );
             }
 
             return _SettingsSlideRoute<void>(
               builder: (_) => page,
-              settings: settings,
+              settings: route,
             );
           },
               ),
@@ -382,7 +360,6 @@ class _SettingsHomePage extends StatefulWidget {
     required this.onOpenAccount,
     required this.onOpenPlans,
     required this.onOpenAppearance,
-    required this.onOpenBackground,
     required this.onOpenSound,
     this.onOpenWindow,
     required this.onOpenAbout,
@@ -394,7 +371,6 @@ class _SettingsHomePage extends StatefulWidget {
   final VoidCallback onOpenAccount;
   final VoidCallback onOpenPlans;
   final VoidCallback onOpenAppearance;
-  final VoidCallback onOpenBackground;
   final VoidCallback onOpenSound;
   final VoidCallback? onOpenWindow;
   final VoidCallback onOpenAbout;
@@ -469,13 +445,6 @@ class _SettingsHomePageState extends State<_SettingsHomePage> {
             title: 'Appearance',
             subtitle: 'Colour, gradient, and live home themes',
             onTap: widget.onOpenAppearance,
-          ),
-          const Divider(height: 1),
-          _navTile(
-            icon: Icons.wallpaper_outlined,
-            title: 'Background',
-            subtitle: isPro ? 'Custom photo behind calendar' : 'Pro - custom photo',
-            onTap: widget.onOpenBackground,
           ),
           const Divider(height: 1),
           _navTile(
@@ -595,120 +564,65 @@ class _SettingsAppearancePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palettePreset = appearance.settingsPalettePreset;
-    final liveMode = appearance.settingsLiveMode;
-    final theme = Theme.of(context);
+    return ListenableBuilder(
+      listenable: appearance,
+      builder: (context, _) {
+        final palettePreset = appearance.settingsPalettePreset;
+        final liveMode = appearance.settingsLiveMode;
+        final theme = Theme.of(context);
 
-    return _SettingsPageShell(
-      title: 'Appearance',
-      child: Theme(
-        data: _settingsListTheme(context),
-        child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-        children: [
-          Text(
-            'Choose one look: a colour or gradient palette, or a live animated theme - not both. Tap to preview, then close settings to apply.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Colour theme',
-            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 8),
-          HorizontalThemePresetRow(
-            presets: AppThemePreset.classicPresets,
-            selected: palettePreset,
-            onSelected: (preset) => onPresetSelected(preset),
-          ),
-          const Divider(height: 24),
-          Text(
-            'Gradient themes',
-            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 8),
-          HorizontalThemePresetRow(
-            presets: AppThemePreset.gradientPresets,
-            selected: palettePreset,
-            onSelected: (preset) => onPresetSelected(preset),
-          ),
-          const Divider(height: 24),
-          Text(
-            'Live home theme',
-            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Animated backdrop behind your calendar.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
-            ),
-          ),
-          const SizedBox(height: 12),
-          _liveThemeGrid(context, liveMode),
-        ],
-        ),
-      ),
-    );
-  }
-
-  Widget _liveThemeGrid(BuildContext context, CalendarAmbientMode? selected) {
-    final desktop = isDesktop || MediaQuery.sizeOf(context).width >= 720;
-    final crossAxisCount = desktop ? 4 : 2;
-    const tileHeight = 76.0;
-
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: crossAxisCount,
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
-        mainAxisExtent: tileHeight,
-      ),
-      itemCount: CalendarAmbientMode.values.length,
-      itemBuilder: (context, index) {
-        final mode = CalendarAmbientMode.values[index];
-        final isSelected = selected != null && mode == selected;
-        return Material(
-          color: isSelected
-              ? Theme.of(context).colorScheme.primaryContainer
-              : Theme.of(context).colorScheme.surfaceContainerHighest
-                  .withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(12),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: () => onAmbientSelected(mode),
-            child: Stack(
+        return _SettingsPageShell(
+          title: 'Appearance',
+          child: Theme(
+            data: _settingsListTheme(context),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
               children: [
-                Positioned.fill(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: AmbientThemePreview(mode: mode),
+                Text(
+                  'Choose one look: a colour or gradient palette, or a live animated theme - not both. Tap to preview, then close settings to apply.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
                   ),
                 ),
-                Positioned(
-                  left: 8,
-                  bottom: 8,
-                  child: Text(
-                    mode.label,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                          shadows: const [
-                            Shadow(blurRadius: 6, color: Colors.black54),
-                          ],
-                        ),
+                const SizedBox(height: 12),
+                Text(
+                  'Colour theme',
+                  style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                HorizontalThemePresetRow(
+                  presets: AppThemePreset.classicPresets,
+                  selected: palettePreset,
+                  onSelected: (preset) => onPresetSelected(preset),
+                ),
+                const Divider(height: 24),
+                Text(
+                  'Gradient themes',
+                  style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                HorizontalThemePresetRow(
+                  presets: AppThemePreset.gradientPresets,
+                  selected: palettePreset,
+                  onSelected: (preset) => onPresetSelected(preset),
+                ),
+                const Divider(height: 24),
+                Text(
+                  'Live home theme',
+                  style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Animated backdrop behind your calendar.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
                   ),
                 ),
-                if (isSelected)
-                  const Positioned(
-                    top: 6,
-                    right: 6,
-                    child: Icon(Icons.check_circle, color: Colors.white, size: 18),
-                  ),
+                const SizedBox(height: 12),
+                _LiveThemeGrid(
+                  selected: liveMode,
+                  onSelected: onAmbientSelected,
+                ),
               ],
             ),
           ),
@@ -718,142 +632,158 @@ class _SettingsAppearancePage extends StatelessWidget {
   }
 }
 
-class _SettingsBackgroundPage extends StatefulWidget {
-  const _SettingsBackgroundPage({
-    required this.useCustomBackground,
-    required this.onUseCustomBackgroundChanged,
-    required this.onCustomBackgroundChanged,
-    required this.onOpenPaywall,
+class _LiveThemeGrid extends StatefulWidget {
+  const _LiveThemeGrid({
+    required this.selected,
+    required this.onSelected,
   });
 
-  final bool useCustomBackground;
-  final ValueChanged<bool> onUseCustomBackgroundChanged;
-  final VoidCallback onCustomBackgroundChanged;
-  final VoidCallback onOpenPaywall;
+  final CalendarAmbientMode? selected;
+  final Future<void> Function(CalendarAmbientMode) onSelected;
 
   @override
-  State<_SettingsBackgroundPage> createState() => _SettingsBackgroundPageState();
+  State<_LiveThemeGrid> createState() => _LiveThemeGridState();
 }
 
-class _SettingsBackgroundPageState extends State<_SettingsBackgroundPage> {
-  late bool _useCustomBg = widget.useCustomBackground;
-  String? _customBgPath;
-  var _loading = true;
-  final _subscriptions = SubscriptionService.instance;
+class _LiveThemeGridState extends State<_LiveThemeGrid>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _previewTicker;
 
   @override
   void initState() {
     super.initState();
-    _subscriptions.addListener(_rebuild);
-    _load();
+    _previewTicker = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 18),
+    )..repeat();
   }
 
   @override
   void dispose() {
-    _subscriptions.removeListener(_rebuild);
+    _previewTicker.dispose();
     super.dispose();
-  }
-
-  void _rebuild() {
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _load() async {
-    final bg = await CustomBackgroundService.instance.loadBackgroundFile();
-    if (!mounted) return;
-    setState(() {
-      _customBgPath = bg?.path;
-      _loading = false;
-    });
-  }
-
-  bool get _isPro => _subscriptions.isPro;
-
-  void _requirePro() {
-    AppHaptics.tap();
-    widget.onOpenPaywall();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return const _SettingsPageShell(
-        title: 'Background',
-        child: Center(child: CircularProgressIndicator()),
-      );
-    }
+    final desktop = isDesktop || MediaQuery.sizeOf(context).width >= 720;
+    final crossAxisCount = desktop ? 4 : 2;
+    const tileHeight = 76.0;
+    final theme = Theme.of(context);
 
-    return _SettingsPageShell(
-      title: 'Background',
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-        children: [
-          if (!_isPro)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.lock_outline),
-              title: const Text('Pro feature'),
-              subtitle: const Text('Upgrade to use your own photo as the backdrop.'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: _requirePro,
-            ),
-          if (!_isPro) const Divider(height: 24),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Use custom photo'),
-            subtitle: const Text('Replaces the live theme with your image.'),
-            value: _useCustomBg && _isPro,
-            onChanged: _isPro
-                ? (value) async {
-                    AppHaptics.tap();
-                    setState(() => _useCustomBg = value);
-                    widget.onUseCustomBackgroundChanged(value);
-                  }
-                : null,
+    return AnimatedBuilder(
+      animation: _previewTicker,
+      builder: (context, _) {
+        final previewTime = _previewTicker.value * 18;
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: crossAxisCount,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            mainAxisExtent: tileHeight,
           ),
-          const Divider(height: 1),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            enabled: _isPro,
-            leading: _customBgPath != null
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.file(
-                      File(_customBgPath!),
-                      width: 48,
-                      height: 48,
-                      fit: BoxFit.cover,
+          itemCount: CalendarAmbientMode.values.length,
+          itemBuilder: (context, index) {
+            final mode = CalendarAmbientMode.values[index];
+            final isSelected =
+                widget.selected != null && mode == widget.selected;
+            return Material(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(12),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => widget.onSelected(mode),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isSelected
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.outline.withValues(alpha: 0.25),
+                      width: isSelected ? 2.5 : 1,
                     ),
-                  )
-                : const Icon(Icons.image_outlined),
-            title: const Text('Choose photo'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: _isPro
-                ? () async {
-                    AppHaptics.tap();
-                    await CustomBackgroundService.instance.pickAndSaveBackground();
-                    widget.onCustomBackgroundChanged();
-                    await _load();
-                  }
-                : _requirePro,
-          ),
-          if (_customBgPath != null && _isPro) ...[
-            const Divider(height: 1),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Remove custom photo'),
-              onTap: () async {
-                AppHaptics.tap();
-                await CustomBackgroundService.instance.clearBackground();
-                setState(() => _useCustomBg = false);
-                widget.onUseCustomBackgroundChanged(false);
-                widget.onCustomBackgroundChanged();
-                await _load();
-              },
-            ),
-          ],
-        ],
-      ),
+                    boxShadow: isSelected
+                        ? [
+                            BoxShadow(
+                              color: theme.colorScheme.primary
+                                  .withValues(alpha: 0.35),
+                              blurRadius: 10,
+                              spreadRadius: 0.5,
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(11),
+                          child: AmbientThemePreview(
+                            mode: mode,
+                            time: previewTime + mode.index * 0.65,
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        left: 8,
+                        bottom: 8,
+                        child: Text(
+                          mode.label,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            shadows: const [
+                              Shadow(blurRadius: 6, color: Colors.black54),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (isSelected)
+                        Positioned(
+                          top: 6,
+                          right: 6,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primary,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.check_rounded,
+                                  size: 12,
+                                  color: theme.colorScheme.onPrimary,
+                                ),
+                                const SizedBox(width: 2),
+                                Text(
+                                  'Selected',
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: theme.colorScheme.onPrimary,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 10,
+                                    height: 1.1,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

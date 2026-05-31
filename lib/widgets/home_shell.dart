@@ -99,9 +99,6 @@ class _HomeShellState extends State<HomeShell> {
       onPresetChanged: appearance.selectPalettePreset,
       ambientMode: appearance.ambient,
       onAmbientChanged: appearance.selectLiveTheme,
-      useCustomBackground: appearance.useCustomBackground,
-      onUseCustomBackgroundChanged: appearance.setUseCustomBackground,
-      onCustomBackgroundChanged: appearance.refreshCustomBackgroundPath,
       stayOnTop: widget.stayOnTop,
       onStayOnTopChanged: widget.onStayOnTopChanged,
       onOpenSettings: _openSettings,
@@ -112,15 +109,8 @@ class _HomeShellState extends State<HomeShell> {
 
     final calendarTree = usesLive
         ? CalendarAmbientBackdrop(
-            key: ValueKey(
-              'live-${appearance.ambient.name}-'
-              '${appearance.customBackgroundPath}-'
-              '${appearance.useCustomBackground}',
-            ),
+            key: ValueKey('live-${appearance.ambient.name}'),
             mode: appearance.ambient,
-            customBackgroundPath: appearance.customBackgroundPath,
-            useCustomPhoto: appearance.useCustomBackground &&
-                appearance.customBackgroundPath != null,
             child: calendar,
           )
         : usesGradientPalette

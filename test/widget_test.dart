@@ -15,7 +15,6 @@ void main() {
         initialKind: HomeThemeKind.palette,
         initialPreset: AppThemePreset.violet,
         initialAmbient: CalendarAmbientMode.aquatic,
-        initialUseCustomBackground: false,
       ),
     );
     await tester.pumpAndSettle();

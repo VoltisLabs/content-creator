@@ -36,20 +36,13 @@ class AuthCenteredBody extends StatelessWidget {
             child: AuthFormLayout(
               maxWidth: maxWidth,
               child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(
-                    child: Align(
-                      alignment: Alignment.bottomCenter,
-                      child: header,
-                    ),
-                  ),
+                  header,
+                  const SizedBox(height: 8),
                   core,
-                  Expanded(
-                    child: Align(
-                      alignment: Alignment.topCenter,
-                      child: footer,
-                    ),
-                  ),
+                  footer,
                 ],
               ),
             ),

@@ -6,7 +6,7 @@ abstract final class PlanCatalogCopy {
     'Unlimited posts every day and every month',
     'Plan content in any future month on the calendar',
     'Share a whole month with another device on your Wi-Fi',
-    'Custom photo background behind the calendar',
+    'All colour, gradient, and live home themes',
   ];
 
   static List<String> get freeFeatureBullets => [

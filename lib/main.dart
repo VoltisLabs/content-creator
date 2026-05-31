@@ -9,7 +9,6 @@ import 'screens/auth_gate.dart';
 import 'screens/voltis_splash_screen.dart';
 import 'services/appearance_preferences.dart';
 import 'services/calendar_share_service.dart';
-import 'services/custom_background_service.dart';
 import 'services/desktop_window.dart';
 import 'services/storage_service.dart';
 import 'services/subscription_service.dart';
@@ -49,8 +48,6 @@ Future<void> main() async {
       ? AppearanceController.liveChromePreset
       : storedPreset;
   final ambient = await AppearancePreferences.loadAmbient();
-  final useCustomBg = await AppearancePreferences.loadUseCustomBackground();
-  final customBgFile = await CustomBackgroundService.instance.loadBackgroundFile();
 
   runApp(
     AppSettingsScope(
@@ -59,8 +56,6 @@ Future<void> main() async {
         initialKind: kind,
         initialPreset: preset,
         initialAmbient: ambient,
-        initialUseCustomBackground: useCustomBg && customBgFile != null,
-        initialCustomBackgroundPath: customBgFile?.path,
       ),
     ),
   );
@@ -93,15 +88,11 @@ class ContentCalendarApp extends StatefulWidget {
     required this.initialKind,
     required this.initialPreset,
     required this.initialAmbient,
-    required this.initialUseCustomBackground,
-    this.initialCustomBackgroundPath,
   });
 
   final HomeThemeKind initialKind;
   final AppThemePreset initialPreset;
   final CalendarAmbientMode initialAmbient;
-  final bool initialUseCustomBackground;
-  final String? initialCustomBackgroundPath;
 
   @override
   State<ContentCalendarApp> createState() => _ContentCalendarAppState();
@@ -119,8 +110,6 @@ class _ContentCalendarAppState extends State<ContentCalendarApp> {
       kind: widget.initialKind,
       preset: widget.initialPreset,
       ambient: widget.initialAmbient,
-      useCustomBackground: widget.initialUseCustomBackground,
-      customBackgroundPath: widget.initialCustomBackgroundPath,
     );
   }
 

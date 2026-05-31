@@ -6,7 +6,6 @@ import '../constants/legal_urls.dart';
 import '../constants/plan_catalog_copy.dart';
 import '../services/plan_service.dart';
 import '../services/subscription_service.dart';
-import '../state/app_settings.dart';
 import '../screens/legal_document_screen.dart';
 import '../utils/app_haptics.dart';
 import 'haptic_buttons.dart';
@@ -173,10 +172,6 @@ class _PaywallSheetBodyState extends State<PaywallSheetBody> {
             ),
           ],
           const SizedBox(height: 12),
-          if (widget.embeddedInSettings) ...[
-            const _VoltisCorePlansNote(),
-            const SizedBox(height: 16),
-          ],
           const _ProBenefitsList(),
           const SizedBox(height: 16),
           PlanCard(
@@ -227,52 +222,6 @@ class _PaywallSheetBodyState extends State<PaywallSheetBody> {
   }
 }
 
-class _VoltisCorePlansNote extends StatelessWidget {
-  const _VoltisCorePlansNote();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final settings = AppSettingsScope.of(context);
-    final signedIn = settings.isSignedIn;
-    final corePro = settings.contentCalendarPro;
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
-        border: Border.all(
-          color: theme.colorScheme.outline.withValues(alpha: 0.2),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Voltis Core',
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            signedIn
-                ? (corePro
-                    ? 'Pro is active on ${settings.accountEmail} via Voltis Core.'
-                    : 'Signed in as ${settings.accountEmail}. Refresh plan status in Account if you upgraded on the web.')
-                : 'Sign in under Settings → Voltis Core Account to sync Pro from your Voltis Core subscription.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.72),
-              height: 1.4,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _ProBenefitsList extends StatelessWidget {
   const _ProBenefitsList();
 
@@ -284,7 +233,7 @@ class _ProBenefitsList extends StatelessWidget {
       height: 1.45,
     );
 
-    final benefits = PlanCatalogCopy.proFeatureBullets;
+    const benefits = PlanCatalogCopy.proFeatureBullets;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -372,10 +321,9 @@ class PlanCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             isPro
-                ? 'Unlimited posts, any-month planning, month sharing, and a custom photo background.'
-                : '${PlanLimits.maxPostsPerDayFree} posts/day, '
-                    '${PlanLimits.maxPostsPerMonthFree}/month, '
-                    'this month and next month only.',
+                ? 'Unlimited posts, any-month planning, month sharing, and all home themes.'
+                : 'Up to ${PlanLimits.maxPostsPerDayFree} posts/day and '
+                    '${PlanLimits.maxPostsPerMonthFree}/month in this month and next month.',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurface.withValues(alpha: 0.72),
             ),

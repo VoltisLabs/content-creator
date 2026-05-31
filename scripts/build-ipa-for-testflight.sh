@@ -116,6 +116,7 @@ echo ""
 
 export PATH="$HOME/flutter/bin:$PATH"
 cd "${PROJECT_ROOT}"
+
 flutter pub get
 dart run flutter_launcher_icons
 
@@ -123,6 +124,18 @@ if [[ -f "${IOS_DIR}/Podfile" ]] && [[ ! -f "${IOS_DIR}/Pods/Pods.xcodeproj/proj
   echo "📱 Running pod install in ios/..."
   (cd "${IOS_DIR}" && pod install)
 fi
+
+echo "Syncing iOS build number from pubspec.yaml..."
+flutter build ios --config-only
+
+echo "Step 0: Release readiness checks..."
+VERIFY_ARGS=()
+if [[ "${UPLOAD}" == true ]]; then
+  VERIFY_ARGS+=(--upload)
+fi
+python3 "${PROJECT_ROOT}/scripts/verify-release-readiness.py" "${VERIFY_ARGS[@]}"
+"${PROJECT_ROOT}/scripts/run-release-integrity-test.sh"
+echo ""
 
 echo "🧹 Cleaning previous iOS archive/export..."
 rm -rf "${ARCHIVE_PATH}" "${EXPORT_PATH}"
@@ -187,6 +200,7 @@ echo "Step 3: Uploading to TestFlight..."
 
 CREDENTIALS=""
 CREDS_FILE="${PROJECT_ROOT}/scripts/testflight-credentials.json"
+API_CREDS_FILE="${PROJECT_ROOT}/scripts/testflight-api-key.json"
 NOTEPAD_CREDS="${PROJECT_ROOT}/../notepad-pro/scripts/testflight-credentials.json"
 CLIPSTACK_CREDS="${PROJECT_ROOT}/../clipstack/frontend/scripts/testflight-credentials.json"
 PRELURA_SWIFT_CREDS="${PROJECT_ROOT}/../prelura/prelura-swift/frontend/scripts/testflight-credentials.json"
@@ -195,13 +209,16 @@ if [[ -f "${CREDS_FILE}" ]]; then
   CREDENTIALS="$(<"${CREDS_FILE}")"
   echo "Using credentials from scripts/testflight-credentials.json"
 elif [[ -f "${NOTEPAD_CREDS}" ]]; then
-  CREDENTIALS="$(<"${NOTEPAD_CREDS}")"
+  CREDS_FILE="${NOTEPAD_CREDS}"
+  CREDENTIALS="$(<"${CREDS_FILE}")"
   echo "Using credentials from ../notepad-pro/scripts/testflight-credentials.json"
 elif [[ -f "${CLIPSTACK_CREDS}" ]]; then
-  CREDENTIALS="$(<"${CLIPSTACK_CREDS}")"
+  CREDS_FILE="${CLIPSTACK_CREDS}"
+  CREDENTIALS="$(<"${CREDS_FILE}")"
   echo "Using credentials from ../clipstack/frontend/scripts/testflight-credentials.json"
 elif [[ -f "${PRELURA_SWIFT_CREDS}" ]]; then
-  CREDENTIALS="$(<"${PRELURA_SWIFT_CREDS}")"
+  CREDS_FILE="${PRELURA_SWIFT_CREDS}"
+  CREDENTIALS="$(<"${CREDS_FILE}")"
   echo "Using credentials from ../prelura/prelura-swift/frontend/scripts/testflight-credentials.json"
 fi
 
@@ -332,8 +349,39 @@ fi
 
 echo "✅ UPLOAD SUCCEEDED"
 echo "Upload log saved to: ${UPLOAD_LOG}"
+
+echo ""
+echo "Step 4: Auto-distributing to TestFlight beta groups..."
+mkdir -p "${HOME}/.appstoreconnect/private_keys"
+if compgen -G "${HOME}/Downloads/AuthKey_"*.p8 >/dev/null 2>&1; then
+  for src in "${HOME}"/Downloads/AuthKey_*.p8; do
+    dest="${HOME}/.appstoreconnect/private_keys/$(basename "${src}")"
+    if [[ ! -f "${dest}" ]]; then
+      cp "${src}" "${dest}"
+      chmod 600 "${dest}"
+      echo "Installed API key: ${dest}"
+    fi
+  done
+fi
+DISTRIBUTE_CREDS="${API_CREDS_FILE}"
+if [[ ! -f "${DISTRIBUTE_CREDS}" ]]; then
+  DISTRIBUTE_CREDS="${CREDS_FILE}"
+fi
+if python3 "${PROJECT_ROOT}/scripts/distribute-testflight-build.py" \
+  --config "${CONFIG_FILE}" \
+  --credentials "${DISTRIBUTE_CREDS}" \
+  --version "${IPA_VERSION}" \
+  --build "${IPA_BUILD}" \
+  --wait; then
+  echo "✅ TestFlight groups updated; internal testers should get a notification."
+else
+  echo "ℹ️ Auto-distribute skipped (API key not configured)."
+  echo "   Upload succeeded — internal testers should still be notified via App Store Connect"
+  echo "   (same as Mockups) once processing finishes."
+fi
+
 echo ""
 echo "Next steps in App Store Connect (https://appstoreconnect.apple.com):"
-echo "  • TestFlight: add testers to build ${IPA_VERSION} (${IPA_BUILD})"
+echo "  • TestFlight: build ${IPA_VERSION} (${IPA_BUILD}) processing / notifying testers"
 echo "  • App Review: App Store tab → your version → select this build → Submit for Review"
 echo "  • Ensure subscription com.calendar.content.pro.monthly is attached to this version"

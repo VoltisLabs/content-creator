@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 
 import '../services/appearance_preferences.dart';
-import '../services/custom_background_service.dart';
 import '../theme/app_theme_preset.dart';
 import '../theme/calendar_ambient_mode.dart';
 import '../theme/home_theme_kind.dart';
@@ -13,13 +12,9 @@ class AppearanceController extends ChangeNotifier {
     required HomeThemeKind kind,
     required AppThemePreset preset,
     required CalendarAmbientMode ambient,
-    required bool useCustomBackground,
-    String? customBackgroundPath,
   })  : kind = kind,
         preset = preset,
-        ambient = ambient,
-        useCustomBackground = useCustomBackground,
-        customBackgroundPath = customBackgroundPath;
+        ambient = ambient;
 
   /// UI chrome preset when [kind] is [HomeThemeKind.live].
   static const liveChromePreset = AppThemePreset.developer;
@@ -27,16 +22,11 @@ class AppearanceController extends ChangeNotifier {
   HomeThemeKind kind;
   AppThemePreset preset;
   CalendarAmbientMode ambient;
-  bool useCustomBackground;
-  String? customBackgroundPath;
 
   var _batching = false;
   HomeThemeKind? _pendingKind;
   AppThemePreset? _pendingPreset;
   CalendarAmbientMode? _pendingAmbient;
-  bool? _pendingUseCustomBackground;
-  String? _pendingCustomBackgroundPath;
-  var _pendingCustomPathRefresh = false;
 
   bool get usesLiveHomeTheme => effectiveKind == HomeThemeKind.live;
   bool get usesPaletteTheme => effectiveKind == HomeThemeKind.palette;
@@ -76,15 +66,6 @@ class AppearanceController extends ChangeNotifier {
       ambient = _pendingAmbient!;
       _pendingAmbient = null;
     }
-    if (_pendingUseCustomBackground != null) {
-      useCustomBackground = _pendingUseCustomBackground!;
-      _pendingUseCustomBackground = null;
-    }
-    if (_pendingCustomPathRefresh) {
-      customBackgroundPath = _pendingCustomBackgroundPath;
-      _pendingCustomPathRefresh = false;
-      _pendingCustomBackgroundPath = null;
-    }
 
     notifyListeners();
   }
@@ -98,6 +79,7 @@ class AppearanceController extends ChangeNotifier {
       _pendingKind = HomeThemeKind.palette;
       _pendingPreset = value;
       _pendingAmbient = null;
+      notifyListeners();
       return;
     }
 
@@ -116,6 +98,7 @@ class AppearanceController extends ChangeNotifier {
       _pendingKind = HomeThemeKind.live;
       _pendingAmbient = value;
       _pendingPreset = null;
+      notifyListeners();
       return;
     }
 
@@ -125,33 +108,9 @@ class AppearanceController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setUseCustomBackground(bool value) async {
-    await AppearancePreferences.saveUseCustomBackground(value);
-    if (_batching) {
-      _pendingUseCustomBackground = value;
-      return;
-    }
-    if (useCustomBackground == value) return;
-    useCustomBackground = value;
-    notifyListeners();
-  }
-
-  Future<void> refreshCustomBackgroundPath() async {
-    final file = await CustomBackgroundService.instance.loadBackgroundFile();
-    if (_batching) {
-      _pendingCustomPathRefresh = true;
-      _pendingCustomBackgroundPath = file?.path;
-      return;
-    }
-    customBackgroundPath = file?.path;
-    notifyListeners();
-  }
-
   HomeThemeKind get settingsKind => effectiveKind;
   AppThemePreset? get settingsPalettePreset =>
       effectiveKind == HomeThemeKind.palette ? (_pendingPreset ?? preset) : null;
   CalendarAmbientMode? get settingsLiveMode =>
       effectiveKind == HomeThemeKind.live ? (_pendingAmbient ?? ambient) : null;
-  bool get settingsUseCustomBackground =>
-      _pendingUseCustomBackground ?? useCustomBackground;
 }

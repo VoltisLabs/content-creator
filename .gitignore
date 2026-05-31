@@ -44,4 +44,6 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 scripts/testflight-credentials.json
+scripts/testflight-api-key.json
+scripts/AuthKey_*.p8
 .cursor-relaunch-dd/

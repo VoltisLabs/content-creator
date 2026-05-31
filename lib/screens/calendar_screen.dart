@@ -34,9 +34,6 @@ class CalendarScreen extends StatefulWidget {
     required this.onPresetChanged,
     required this.ambientMode,
     required this.onAmbientChanged,
-    required this.useCustomBackground,
-    required this.onUseCustomBackgroundChanged,
-    required this.onCustomBackgroundChanged,
     required this.stayOnTop,
     required this.onStayOnTopChanged,
     required this.onOpenSettings,
@@ -53,9 +50,6 @@ class CalendarScreen extends StatefulWidget {
   final ValueChanged<AppThemePreset> onPresetChanged;
   final CalendarAmbientMode ambientMode;
   final ValueChanged<CalendarAmbientMode> onAmbientChanged;
-  final bool useCustomBackground;
-  final ValueChanged<bool> onUseCustomBackgroundChanged;
-  final VoidCallback onCustomBackgroundChanged;
   final bool stayOnTop;
   final ValueChanged<bool> onStayOnTopChanged;
   final VoidCallback onOpenSettings;

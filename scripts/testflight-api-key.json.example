@@ -1,0 +1,6 @@
+{
+  "method": "api_key",
+  "api_key_id": "B3SJX8QWUX",
+  "issuer_id": "YOUR_ISSUER_ID_FROM_APP_STORE_CONNECT",
+  "api_key_path": "~/.appstoreconnect/private_keys/AuthKey_B3SJX8QWUX.p8"
+}

@@ -10,8 +10,6 @@ class AppearancePreferences {
   static const _kindKey = 'home_theme_kind';
   static const _presetKey = 'app_theme_preset';
   static const _ambientKey = 'calendar_ambient_mode';
-  static const _customBgKey = 'custom_background_path';
-  static const _useCustomBgKey = 'use_custom_background';
 
   static Future<HomeThemeKind> loadKind({required AppThemePreset preset}) async {
     final prefs = await SharedPreferences.getInstance();
@@ -46,29 +44,5 @@ class AppearancePreferences {
   static Future<void> saveAmbient(CalendarAmbientMode mode) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_ambientKey, mode.name);
-  }
-
-  static Future<String?> loadCustomBackgroundPath() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_customBgKey);
-  }
-
-  static Future<void> saveCustomBackgroundPath(String? path) async {
-    final prefs = await SharedPreferences.getInstance();
-    if (path == null || path.isEmpty) {
-      await prefs.remove(_customBgKey);
-    } else {
-      await prefs.setString(_customBgKey, path);
-    }
-  }
-
-  static Future<bool> loadUseCustomBackground() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_useCustomBgKey) ?? false;
-  }
-
-  static Future<void> saveUseCustomBackground(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_useCustomBgKey, value);
   }
 }

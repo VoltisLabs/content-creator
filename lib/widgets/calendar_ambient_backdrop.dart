@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -7,28 +6,84 @@ import 'package:sensors_plus/sensors_plus.dart';
 
 import '../theme/calendar_ambient_mode.dart';
 
-/// Small tile preview for settings theme picker (static frame — avoids 26 tickers).
-class AmbientThemePreview extends StatelessWidget {
+/// Animated tile preview for the settings live-theme grid.
+class AmbientThemePreview extends StatefulWidget {
   const AmbientThemePreview({
     super.key,
     required this.mode,
     this.time,
+    this.animate = false,
   });
 
   final CalendarAmbientMode mode;
 
-  /// Optional animation phase; defaults to a stable offset per mode.
+  /// Optional animation phase; when [animate] is true a shared ticker drives this.
   final double? time;
+
+  final bool animate;
+
+  @override
+  State<AmbientThemePreview> createState() => _AmbientThemePreviewState();
+}
+
+class _AmbientThemePreviewState extends State<AmbientThemePreview>
+    with SingleTickerProviderStateMixin {
+  AnimationController? _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncController();
+  }
+
+  @override
+  void didUpdateWidget(AmbientThemePreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animate != widget.animate) {
+      _syncController();
+    }
+  }
+
+  void _syncController() {
+    if (widget.animate) {
+      _controller ??= AnimationController(
+        vsync: this,
+        duration: const Duration(seconds: 18),
+      )..repeat();
+      return;
+    }
+    _controller?.dispose();
+    _controller = null;
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (!widget.animate || _controller == null) {
+      return _paint(widget.time ?? widget.mode.index * 0.65);
+    }
+
+    return AnimatedBuilder(
+      animation: _controller!,
+      builder: (context, _) {
+        return _paint(_controller!.value * 18);
+      },
+    );
+  }
+
+  Widget _paint(double time) {
     return CustomPaint(
       painter: _AmbientPainter(
-        mode: mode,
-        time: time ?? mode.index * 0.65,
+        mode: widget.mode,
+        time: time,
         tiltX: 0,
         tiltY: 0,
-        palette: mode.palette,
+        palette: widget.mode.palette,
       ),
       child: const SizedBox.expand(),
     );
@@ -40,14 +95,10 @@ class CalendarAmbientBackdrop extends StatefulWidget {
   const CalendarAmbientBackdrop({
     super.key,
     required this.mode,
-    this.customBackgroundPath,
-    this.useCustomPhoto = false,
     required this.child,
   });
 
   final CalendarAmbientMode mode;
-  final String? customBackgroundPath;
-  final bool useCustomPhoto;
   final Widget child;
 
   @override
@@ -106,45 +157,21 @@ class _CalendarAmbientBackdropState extends State<CalendarAmbientBackdrop>
     return Stack(
       fit: StackFit.expand,
       children: [
-        if (widget.useCustomPhoto && widget.customBackgroundPath != null) ...[
-          _CustomPhotoLayer(path: widget.customBackgroundPath!),
-        ] else
-          AnimatedBuilder(
-            animation: _controller,
-            builder: (context, _) {
-              return CustomPaint(
-                painter: _AmbientPainter(
-                  mode: widget.mode,
-                  time: _controller.value * 18,
-                  tiltX: _tiltX,
-                  tiltY: _tiltY,
-                  palette: widget.mode.palette,
-                ),
-              );
-            },
-          ),
-        widget.child,
-      ],
-    );
-  }
-}
-
-class _CustomPhotoLayer extends StatelessWidget {
-  const _CustomPhotoLayer({required this.path});
-
-  final String path;
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Image.file(
-          File(path),
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+        AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) {
+            return CustomPaint(
+              painter: _AmbientPainter(
+                mode: widget.mode,
+                time: _controller.value * 18,
+                tiltX: _tiltX,
+                tiltY: _tiltY,
+                palette: widget.mode.palette,
+              ),
+            );
+          },
         ),
-        Container(color: Colors.black.withValues(alpha: 0.42)),
+        widget.child,
       ],
     );
   }
