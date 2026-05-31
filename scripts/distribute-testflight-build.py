@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -24,6 +25,65 @@ API_BASE = "https://api.appstoreconnect.apple.com/v1"
 
 def load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def find_shared_root(project_root: Path) -> Path | None:
+    current = project_root.resolve()
+    for _ in range(8):
+        for relative in ("shared", "Voltis labs/shared"):
+            team_file = current / relative / "apple-testflight-team.json"
+            if team_file.is_file():
+                return (current / relative).resolve()
+        if current.parent == current:
+            break
+        current = current.parent
+    return None
+
+
+def load_team_config(project_root: Path) -> dict:
+    """Voltis-wide TestFlight team settings (issuer ID, API key id, beta groups)."""
+    candidates: list[Path] = []
+    shared_root = find_shared_root(project_root)
+    if shared_root is not None:
+        candidates.extend(
+            [
+                shared_root / "apple-testflight-team.json",
+                shared_root / "testflight-api-key.json",
+            ]
+        )
+    candidates.extend(
+        [
+            Path.home() / ".appstoreconnect" / "testflight-api-key.json",
+            project_root / "scripts" / "testflight-api-key.json",
+        ]
+    )
+    merged: dict = {}
+    for path in candidates:
+        if not path.is_file():
+            continue
+        data = load_json(path)
+        if not isinstance(data, dict):
+            continue
+        for key, value in data.items():
+            if value not in (None, ""):
+                merged[key] = value
+        for src, dest in (
+            ("api_key_id", "asc_api_key_id"),
+            ("issuer_id", "asc_issuer_id"),
+        ):
+            if data.get(src) not in (None, ""):
+                merged[dest] = data[src]
+        if data.get("testflight_beta_groups"):
+            merged["testflight_beta_groups"] = data["testflight_beta_groups"]
+    return merged
+
+
+def resolve_shared_api_creds(project_root: Path) -> Path | None:
+    shared_root = find_shared_root(project_root)
+    if shared_root is None:
+        return None
+    candidate = shared_root / "testflight-api-key.json"
+    return candidate if candidate.is_file() else None
 
 
 def make_token(key_id: str, issuer_id: str, private_key: str) -> str:
@@ -157,14 +217,18 @@ def assign_groups(token: str, build_id: str, group_ids: list[str]) -> None:
 
 def resolve_api_credentials(creds: dict, config: dict, project_root: Path) -> dict | None:
     """Merge password upload creds with optional API key file / config for distribute."""
+    team = load_team_config(project_root)
     key_id = (
         creds.get("api_key_id")
         or config.get("asc_api_key_id")
+        or team.get("asc_api_key_id")
         or ""
     )
     issuer_id = (
         creds.get("issuer_id")
         or config.get("asc_issuer_id")
+        or team.get("asc_issuer_id")
+        or os.environ.get("ASC_ISSUER_ID", "")
         or ""
     )
     key_path = creds.get("api_key_path") or creds.get("key_file") or ""
@@ -175,18 +239,7 @@ def resolve_api_credentials(creds: dict, config: dict, project_root: Path) -> di
         key_path = creds.get("api_key_path") or creds.get("key_file") or key_path
 
     if not key_id:
-        for folder in (
-            Path.home() / "Downloads",
-            Path.home() / ".appstoreconnect" / "private_keys",
-            project_root / "scripts",
-        ):
-            if not folder.is_dir():
-                continue
-            matches = sorted(folder.glob("AuthKey_*.p8"))
-            if len(matches) == 1:
-                key_path = str(matches[0])
-                key_id = matches[0].stem.removeprefix("AuthKey_")
-                break
+        key_id = "B3SJX8QWUX"
 
     if key_path:
         expanded = Path(key_path).expanduser()
@@ -201,6 +254,15 @@ def resolve_api_credentials(creds: dict, config: dict, project_root: Path) -> di
                 if candidate.is_file():
                     key_path = str(candidate)
                     break
+
+    if not key_path and key_id:
+        for candidate in (
+            Path.home() / ".appstoreconnect" / "private_keys" / f"AuthKey_{key_id}.p8",
+            Path.home() / "Downloads" / f"AuthKey_{key_id}.p8",
+        ):
+            if candidate.is_file():
+                key_path = str(candidate)
+                break
 
     if not key_id or not issuer_id or not key_path:
         return None
@@ -226,10 +288,19 @@ def main() -> int:
     args = parser.parse_args()
 
     config = load_json(args.config)
-    creds = load_json(args.credentials)
+    creds_path = args.credentials
+    if creds_path.is_file():
+        creds = load_json(creds_path)
+    else:
+        creds = {}
     project_root = args.config.resolve().parent.parent
-    api_creds_file = project_root / "scripts" / "testflight-api-key.json"
-    if api_creds_file.is_file():
+    team = load_team_config(project_root)
+    config = {**team, **config}
+    api_creds_file = resolve_shared_api_creds(project_root)
+    if api_creds_file is None:
+        local_api = project_root / "scripts" / "testflight-api-key.json"
+        api_creds_file = local_api if local_api.is_file() else None
+    if api_creds_file is not None:
         creds = {**creds, **load_json(api_creds_file)}
     api = resolve_api_credentials(creds, config, project_root)
     if api is None:
@@ -249,7 +320,7 @@ def main() -> int:
         print("asc_app_numeric_id missing in app-store-config.json.")
         return 1
 
-    group_names = config.get("testflight_beta_groups") or []
+    group_names = config.get("testflight_beta_groups") or ["Internal Testing"]
     if isinstance(group_names, str):
         group_names = [group_names]
 

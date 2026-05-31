@@ -363,7 +363,27 @@ if compgen -G "${HOME}/Downloads/AuthKey_"*.p8 >/dev/null 2>&1; then
     fi
   done
 fi
-DISTRIBUTE_CREDS="${API_CREDS_FILE}"
+CONFIG_FILE="${PROJECT_ROOT}/scripts/app-store-config.json"
+API_CREDS_FILE="${PROJECT_ROOT}/scripts/testflight-api-key.json"
+CREDS_FILE="${PROJECT_ROOT}/scripts/testflight-credentials.json"
+
+DISTRIBUTE_CREDS="$(python3 - <<PY
+from pathlib import Path
+root = Path("${PROJECT_ROOT}").resolve()
+for _ in range(8):
+    for rel in ("shared", "Voltis labs/shared"):
+        p = root / rel / "testflight-api-key.json"
+        if p.is_file():
+            print(p)
+            raise SystemExit(0)
+    if root.parent == root:
+        break
+    root = root.parent
+PY
+)"
+if [[ -z "${DISTRIBUTE_CREDS}" || ! -f "${DISTRIBUTE_CREDS}" ]]; then
+  DISTRIBUTE_CREDS="${API_CREDS_FILE}"
+fi
 if [[ ! -f "${DISTRIBUTE_CREDS}" ]]; then
   DISTRIBUTE_CREDS="${CREDS_FILE}"
 fi
