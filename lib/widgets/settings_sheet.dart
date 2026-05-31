@@ -6,7 +6,11 @@ import '../constants/app_version.dart';
 import '../constants/legal_urls.dart';
 import '../models/voltis_plan.dart';
 import '../screens/legal_document_screen.dart';
+import 'dart:io';
+
 import '../services/app_preferences.dart';
+import '../services/bug_report_service.dart';
+import '../services/image_pick_service.dart';
 import '../services/desktop_window.dart' show isDesktop;
 import '../services/plan_service.dart';
 import '../services/storage_service.dart';
@@ -996,13 +1000,107 @@ class _SettingsHelpPage extends StatelessWidget {
   }
 }
 
-class _SettingsReportBugPage extends StatelessWidget {
+class _SettingsReportBugPage extends StatefulWidget {
   const _SettingsReportBugPage();
+
+  @override
+  State<_SettingsReportBugPage> createState() => _SettingsReportBugPageState();
+}
+
+class _SettingsReportBugPageState extends State<_SettingsReportBugPage> {
+  final _summary = TextEditingController();
+  final _description = TextEditingController();
+  final _attachments = <BugReportAttachment>[];
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    _summary.dispose();
+    _description.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickImages() async {
+    if (_attachments.length >= BugReportService.maxAttachments) {
+      _snack('You can attach up to ${BugReportService.maxAttachments} images.');
+      return;
+    }
+    AppHaptics.tap();
+    final files = await ImagePickService.pickMultipleImages();
+    if (!mounted || files.isEmpty) return;
+
+    for (final file in files) {
+      if (_attachments.length >= BugReportService.maxAttachments) break;
+      try {
+        final bytes = await file.readAsBytes();
+        if (bytes.length > BugReportService.maxBytesPerImage) {
+          _snack('${file.path.split('/').last} is too large (max 4 MB).');
+          continue;
+        }
+        final name = file.path.split(Platform.pathSeparator).last;
+        final mime = _mimeForPath(name);
+        setState(() {
+          _attachments.add(
+            BugReportAttachment(name: name, mime: mime, bytes: bytes),
+          );
+        });
+      } on Object {
+        _snack('Could not read one of the images.');
+      }
+    }
+  }
+
+  String _mimeForPath(String name) {
+    final lower = name.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    if (lower.endsWith('.gif')) return 'image/gif';
+    if (lower.endsWith('.heic')) return 'image/heic';
+    return 'image/jpeg';
+  }
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  Future<void> _submit() async {
+    if (_submitting) return;
+    final settings = AppSettingsScope.read(context);
+    final email = settings.accountEmail;
+    if (email == null || email.isEmpty) {
+      _snack('Sign in under Voltis Core Account first.');
+      return;
+    }
+
+    setState(() => _submitting = true);
+    AppHaptics.tap();
+    try {
+      final message = await BugReportService.submit(
+        email: email,
+        summary: _summary.text,
+        description: _description.text,
+        attachments: List.unmodifiable(_attachments),
+      );
+      if (!mounted) return;
+      _snack(message);
+      Navigator.of(context).pop();
+    } on BugReportException catch (error) {
+      _snack(error.message);
+    } catch (_) {
+      _snack('Could not send report. Check your connection.');
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurface.withValues(alpha: 0.65);
+    final settings = AppSettingsScope.of(context);
 
     return _SettingsPageShell(
       title: 'Report a bug',
@@ -1010,18 +1108,106 @@ class _SettingsReportBugPage extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
         children: [
           Text(
-            'Tell us what went wrong - include your device, app version '
-            '(${AppVersion.label}), and steps to reproduce if you can.',
+            'Describe what went wrong. Your report goes straight to the '
+            'Voltiscore ADL dashboard — device and app version '
+            '(${AppVersion.label}) are included automatically.',
             style: theme.textTheme.bodyMedium?.copyWith(color: muted),
+          ),
+          if (settings.accountEmail == null) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Sign in under Voltis Core Account so we can reply to you.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ],
+          const SizedBox(height: 20),
+          TextField(
+            controller: _summary,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              labelText: 'Short summary',
+              hintText: 'e.g. Plans page shows Free after purchase',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _description,
+            textCapitalization: TextCapitalization.sentences,
+            minLines: 5,
+            maxLines: 10,
+            decoration: const InputDecoration(
+              labelText: 'What happened?',
+              hintText: 'Steps to reproduce, what you expected, what you saw…',
+              alignLabelWithHint: true,
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'Screenshots (optional)',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (var i = 0; i < _attachments.length; i++)
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.memory(
+                        _attachments[i].bytes,
+                        width: 72,
+                        height: 72,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    Positioned(
+                      top: -6,
+                      right: -6,
+                      child: IconButton.filledTonal(
+                        style: IconButton.styleFrom(
+                          minimumSize: const Size(28, 28),
+                          padding: EdgeInsets.zero,
+                        ),
+                        onPressed: () {
+                          AppHaptics.tap();
+                          setState(() => _attachments.removeAt(i));
+                        },
+                        icon: const Icon(Icons.close, size: 16),
+                      ),
+                    ),
+                  ],
+                ),
+              if (_attachments.length < BugReportService.maxAttachments)
+                OutlinedButton.icon(
+                  onPressed: _submitting ? null : _pickImages,
+                  icon: const Icon(Icons.add_photo_alternate_outlined),
+                  label: const Text('Add images'),
+                ),
+            ],
           ),
           const SizedBox(height: 24),
           FilledButton.icon(
-            onPressed: () {
-              AppHaptics.tap();
-              _launchExternalUrl(LegalUrls.reportBug);
-            },
-            icon: const Icon(Icons.mail_outline),
-            label: const Text('Email support'),
+            onPressed: _submitting || settings.accountEmail == null
+                ? null
+                : _submit,
+            icon: _submitting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.send_rounded),
+            label: Text(_submitting ? 'Sending…' : 'Send to Voltiscore'),
           ),
         ],
       ),
