@@ -51,16 +51,11 @@ class _SettingsSlideRoute<T> extends PageRouteBuilder<T> {
 ThemeData _settingsListTheme(BuildContext context) {
   final base = Theme.of(context);
   final isDark = base.brightness == Brightness.dark;
-  final ink = base.colorScheme.onSurface.withValues(
-    alpha: isDark ? 0.05 : 0.07,
-  );
-  final highlight = base.colorScheme.onSurface.withValues(
-    alpha: isDark ? 0.03 : 0.05,
-  );
   return base.copyWith(
-    splashColor: ink,
-    highlightColor: highlight,
-    hoverColor: highlight,
+    splashFactory: NoSplash.splashFactory,
+    splashColor: Colors.transparent,
+    highlightColor: Colors.transparent,
+    hoverColor: Colors.transparent,
     listTileTheme: base.listTileTheme.copyWith(
       selectedTileColor: base.colorScheme.primary.withValues(alpha: isDark ? 0.12 : 0.08),
     ),
@@ -146,10 +141,15 @@ class _SettingsFlowState extends State<SettingsFlow> {
       onClose: _closeSettings,
       child: Material(
         color: Theme.of(context).scaffoldBackgroundColor,
-        child: Theme(
+          child: Theme(
           data: AppTheme.resolve(
             preset: _previewPreset,
             violetDarkMode: widget.violetDarkMode,
+          ).copyWith(
+            splashFactory: NoSplash.splashFactory,
+            splashColor: Colors.transparent,
+            highlightColor: Colors.transparent,
+            hoverColor: Colors.transparent,
           ),
           child: Scaffold(
             backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -278,7 +278,7 @@ class _SettingsPageShell extends StatelessWidget {
                 ),
                 onPressed: () {
                   AppHaptics.tap();
-                  if (canPopSubPage) {
+                  if (settingsNav.canPop()) {
                     settingsNav.pop();
                   } else {
                     closeSettings();
@@ -492,7 +492,7 @@ class _SettingsHomePageState extends State<_SettingsHomePage> {
           _navTile(
             icon: Icons.bug_report_outlined,
             title: 'Report a bug',
-            subtitle: 'Send feedback by email',
+            subtitle: 'Send to Voltiscore ADL with screenshots',
             onTap: widget.onOpenReportBug,
           ),
           const Divider(height: 1),
