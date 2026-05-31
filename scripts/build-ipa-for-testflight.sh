@@ -14,6 +14,13 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+LOCK_DIR="/tmp/contentcalendar-testflight-build.lock.d"
+if ! mkdir "${LOCK_DIR}" 2>/dev/null; then
+  echo "❌ Another Content Calendar TestFlight build is already running."
+  echo "   Wait for it to finish, or remove ${LOCK_DIR} if it is stale."
+  exit 1
+fi
+
 IOS_DIR="${PROJECT_ROOT}/ios"
 SCHEME="Runner"
 WORKSPACE="Runner.xcworkspace"
@@ -37,6 +44,7 @@ fi
 
 cleanup() {
   rm -f "$EXPORT_OPTIONS_PLIST"
+  rmdir "${LOCK_DIR}" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -117,6 +125,11 @@ echo ""
 export PATH="$HOME/flutter/bin:$PATH"
 cd "${PROJECT_ROOT}"
 
+if [[ "${UPLOAD}" == true ]]; then
+  echo "🧹 Full clean before release upload (prevents stale Dart / parallel-build cache)..."
+  flutter clean
+fi
+
 flutter pub get
 dart run flutter_launcher_icons
 
@@ -138,7 +151,7 @@ python3 "${PROJECT_ROOT}/scripts/verify-release-readiness.py" "${VERIFY_ARGS[@]}
 echo ""
 
 echo "🧹 Cleaning previous iOS archive/export..."
-rm -rf "${ARCHIVE_PATH}" "${EXPORT_PATH}"
+rm -rf "${ARCHIVE_PATH}" "${EXPORT_PATH}" "${PROJECT_ROOT}/build/ios_derived_data"
 mkdir -p "${PROJECT_ROOT}/build/ipa"
 
 echo ""
@@ -182,6 +195,42 @@ fi
 
 echo "✅ IPA exported successfully: ${IPA_PATH}"
 
+verify_ipa_release() {
+  local plist_tmp app_tmp pubspec_build ipa_build
+  plist_tmp="$(mktemp /tmp/contentcalendar-ipa-plist.XXXXXX)"
+  app_tmp="$(mktemp /tmp/contentcalendar-app-bin.XXXXXX)"
+  unzip -p "${IPA_PATH}" "Payload/Runner.app/Info.plist" >"${plist_tmp}"
+  IPA_BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw "${plist_tmp}")"
+  IPA_VERSION="$(plutil -extract CFBundleShortVersionString raw "${plist_tmp}")"
+  IPA_BUILD="$(plutil -extract CFBundleVersion raw "${plist_tmp}")"
+  rm -f "${plist_tmp}"
+  pubspec_build="$(python3 - <<'PY'
+import re
+from pathlib import Path
+text = Path("pubspec.yaml").read_text()
+match = re.search(r"^version:\s*[\d.]+\+(\d+)\s*$", text, re.MULTILINE)
+print(match.group(1) if match else "")
+PY
+)"
+  if [[ -z "${pubspec_build}" || "${pubspec_build}" != "${IPA_BUILD}" ]]; then
+    echo "❌ IPA build number ${IPA_BUILD} does not match pubspec +${pubspec_build}."
+    exit 1
+  fi
+  unzip -p "${IPA_PATH}" "Payload/Runner.app/Frameworks/App.framework/App" >"${app_tmp}"
+  if ! strings "${app_tmp}" | grep -q "Send to Voltiscore"; then
+    echo "❌ IPA is missing the in-app bug report form (Send to Voltiscore)."
+    exit 1
+  fi
+  if strings "${app_tmp}" | grep -q "Email support"; then
+    echo "❌ IPA still contains the removed Email support button."
+    exit 1
+  fi
+  rm -f "${app_tmp}"
+  echo "✅ IPA verified: ${IPA_VERSION} (${IPA_BUILD}) includes bug report form."
+}
+
+verify_ipa_release
+
 DEVICE_FAMILY="$(unzip -p "${IPA_PATH}" "Payload/Runner.app/Info.plist" | plutil -extract UIDeviceFamily xml1 -o - - 2>/dev/null | grep -o '[0-9]' | tr '\n' ',' | sed 's/,$//')"
 echo "UIDeviceFamily in IPA: ${DEVICE_FAMILY:-unknown} (1 = iPhone only)"
 if [[ "${DEVICE_FAMILY}" == *"2"* ]]; then
@@ -198,33 +247,56 @@ fi
 echo ""
 echo "Step 3: Uploading to TestFlight..."
 
-# Prefer shared API key (AuthKey_B3SJX8QWUX.p8) over Apple ID password.
-RESOLVE_CREDS="$(python3 - <<'FINDPY'
-from pathlib import Path
-root = Path("${PROJECT_ROOT}").resolve()
-for _ in range(8):
-    for rel in ("shared/resolve-testflight-creds.sh", "Voltis labs/shared/resolve-testflight-creds.sh"):
-        p = root / rel
-        if p.is_file():
-            print(p)
-            raise SystemExit(0)
-    if root.parent == root:
-        break
-    root = root.parent
-FINDPY
-)"
-if [[ -z "${RESOLVE_CREDS}" || ! -f "${RESOLVE_CREDS}" ]]; then
-  echo "Missing Voltis shared/resolve-testflight-creds.sh"
+CREDENTIALS=""
+CREDS_FILE="${PROJECT_ROOT}/scripts/testflight-credentials.json"
+API_CREDS_FILE="${PROJECT_ROOT}/scripts/testflight-api-key.json"
+NOTEPAD_CREDS="${PROJECT_ROOT}/../notepad-pro/scripts/testflight-credentials.json"
+CLIPSTACK_CREDS="${PROJECT_ROOT}/../clipstack/frontend/scripts/testflight-credentials.json"
+PRELURA_SWIFT_CREDS="${PROJECT_ROOT}/../prelura/prelura-swift/frontend/scripts/testflight-credentials.json"
+
+if [[ -f "${CREDS_FILE}" ]]; then
+  CREDENTIALS="$(<"${CREDS_FILE}")"
+  echo "Using credentials from scripts/testflight-credentials.json"
+elif [[ -f "${NOTEPAD_CREDS}" ]]; then
+  CREDS_FILE="${NOTEPAD_CREDS}"
+  CREDENTIALS="$(<"${CREDS_FILE}")"
+  echo "Using credentials from ../notepad-pro/scripts/testflight-credentials.json"
+elif [[ -f "${CLIPSTACK_CREDS}" ]]; then
+  CREDS_FILE="${CLIPSTACK_CREDS}"
+  CREDENTIALS="$(<"${CREDS_FILE}")"
+  echo "Using credentials from ../clipstack/frontend/scripts/testflight-credentials.json"
+elif [[ -f "${PRELURA_SWIFT_CREDS}" ]]; then
+  CREDS_FILE="${PRELURA_SWIFT_CREDS}"
+  CREDENTIALS="$(<"${CREDS_FILE}")"
+  echo "Using credentials from ../prelura/prelura-swift/frontend/scripts/testflight-credentials.json"
+fi
+
+if [[ -z "${CREDENTIALS}" ]]; then
+  CREDENTIALS="$(security find-generic-password -s "AC_PASSWORD" -a "clipstack" -w 2>/dev/null || true)"
+fi
+if [[ -z "${CREDENTIALS}" ]]; then
+  CREDENTIALS="$(security find-generic-password -s "AC_PASSWORD" -a "Prelura-swift" -w 2>/dev/null || true)"
+fi
+
+if [[ -z "${CREDENTIALS}" ]]; then
+  echo "❌ No credentials found."
+  echo "   Copy scripts/testflight-credentials.json.example → scripts/testflight-credentials.json"
   exit 1
 fi
-# shellcheck source=/dev/null
-source "${RESOLVE_CREDS}"
+
+METHOD="$(printf '%s' "${CREDENTIALS}" | python3 -c 'import sys, json; print(json.load(sys.stdin).get("method",""))' 2>/dev/null || true)"
+if [[ -z "${METHOD}" ]]; then
+  echo "❌ Credentials JSON missing method field."
+  exit 1
+fi
 
 PKG_INFO="$(mktemp /tmp/contentcalendar-ipa-plist.XXXXXX)"
 unzip -p "${IPA_PATH}" "Payload/Runner.app/Info.plist" >"${PKG_INFO}"
-IPA_BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw "${PKG_INFO}")"
-IPA_VERSION="$(plutil -extract CFBundleShortVersionString raw "${PKG_INFO}")"
-IPA_BUILD="$(plutil -extract CFBundleVersion raw "${PKG_INFO}")"
+if [[ -z "${IPA_BUILD:-}" ]]; then
+  IPA_BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw "${PKG_INFO}")"
+  IPA_VERSION="$(plutil -extract CFBundleShortVersionString raw "${PKG_INFO}")"
+  IPA_BUILD="$(plutil -extract CFBundleVersion raw "${PKG_INFO}")"
+fi
 rm -f "${PKG_INFO}"
 echo "IPA: bundle=${IPA_BUNDLE_ID} version=${IPA_VERSION} build=${IPA_BUILD}"
 
@@ -342,27 +414,7 @@ if compgen -G "${HOME}/Downloads/AuthKey_"*.p8 >/dev/null 2>&1; then
     fi
   done
 fi
-CONFIG_FILE="${PROJECT_ROOT}/scripts/app-store-config.json"
-API_CREDS_FILE="${PROJECT_ROOT}/scripts/testflight-api-key.json"
-CREDS_FILE="${PROJECT_ROOT}/scripts/testflight-credentials.json"
-
-DISTRIBUTE_CREDS="$(python3 - <<PY
-from pathlib import Path
-root = Path("${PROJECT_ROOT}").resolve()
-for _ in range(8):
-    for rel in ("shared", "Voltis labs/shared"):
-        p = root / rel / "testflight-api-key.json"
-        if p.is_file():
-            print(p)
-            raise SystemExit(0)
-    if root.parent == root:
-        break
-    root = root.parent
-PY
-)"
-if [[ -z "${DISTRIBUTE_CREDS}" || ! -f "${DISTRIBUTE_CREDS}" ]]; then
-  DISTRIBUTE_CREDS="${API_CREDS_FILE}"
-fi
+DISTRIBUTE_CREDS="${API_CREDS_FILE}"
 if [[ ! -f "${DISTRIBUTE_CREDS}" ]]; then
   DISTRIBUTE_CREDS="${CREDS_FILE}"
 fi

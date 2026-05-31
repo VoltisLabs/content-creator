@@ -22,6 +22,13 @@ REQUIRED_SNIPPETS: dict[str, list[str]] = {
         "SettingsAccountPage",
         "onOpenAccount",
         "Voltis Core Account",
+        "BugReportService",
+        "Send to Voltiscore",
+    ],
+    "lib/services/bug_report_service.dart": [
+        "class BugReportService",
+        "support/reports",
+        "content-calendar",
     ],
     "lib/screens/auth_gate.dart": [
         "class AuthGate",
@@ -44,6 +51,8 @@ FORBIDDEN_SNIPPETS: dict[str, list[str]] = {
         "_SettingsPaywallPage",
         "title: 'Background'",
         "Custom photo",
+        "Email support",
+        "Send feedback by email",
     ],
 }
 
@@ -56,6 +65,7 @@ CRITICAL_GIT_PATHS = [
     "lib/widgets/settings_sheet.dart",
     "lib/widgets/settings_account_page.dart",
     "lib/widgets/settings_plans_page.dart",
+    "lib/services/bug_report_service.dart",
     "lib/screens/auth_gate.dart",
     "lib/services/voltis_core_service.dart",
     "lib/state/app_settings.dart",
