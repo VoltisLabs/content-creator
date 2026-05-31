@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../models/voltis_plan.dart';
-import '../services/subscription_service.dart';
 import '../services/voltis_billing.dart';
 import '../services/voltis_core_service.dart';
 import '../services/voltis_plans_service.dart';
 import '../state/app_settings.dart';
 import '../utils/app_haptics.dart';
 
-/// Plans catalog inside settings (Pinnacle-style, Voltiscore checkout).
+/// Voltiscore subscription plans — same flow as Pinnacle Transfer.
 class SettingsPlansPage extends StatefulWidget {
   const SettingsPlansPage({super.key});
 
@@ -25,7 +24,7 @@ class _SettingsPlansPageState extends State<SettingsPlansPage> {
   @override
   void initState() {
     super.initState();
-    _loadCatalog();
+    _loadCatalog(refreshEntitlements: true);
   }
 
   Future<void> _loadCatalog({bool refreshEntitlements = false}) async {
@@ -36,11 +35,21 @@ class _SettingsPlansPageState extends State<SettingsPlansPage> {
       _loadError = null;
     });
 
-    if (refreshEntitlements) {
+    if (refreshEntitlements && VoltisCoreService.instance.isSignedIn) {
       final voltis = VoltisCoreService.instance;
-      if (voltis.isSignedIn) {
-        await voltis.refreshEntitlements();
-        await applyVoltisSessionToApp(settings);
+      await voltis.refreshEntitlements();
+      await settings.syncFromVoltis(
+        contentCalendarPro: voltis.contentCalendarPro,
+        planTier: voltis.planTier,
+      );
+      final email = voltis.email;
+      if (email != null) {
+        await settings.setAccountEmail(email);
+      }
+      if (mounted && voltis.lastEntitlementsError != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(voltis.lastEntitlementsError!)),
+        );
       }
     }
 
@@ -69,12 +78,17 @@ class _SettingsPlansPageState extends State<SettingsPlansPage> {
     }
   }
 
+  bool _isPlanCurrent(VoltisPlanOffer plan, AppSettings settings) {
+    if (!settings.contentCalendarPro) {
+      return plan.tier == VoltisPlanTier.free;
+    }
+    if (!settings.planTier.isPaid) return false;
+    return settings.planTier == plan.tier;
+  }
+
   @override
   Widget build(BuildContext context) {
     final settings = AppSettingsScope.of(context);
-    final currentTier = settings.planTier;
-    final storePro = SubscriptionService.instance.isPro &&
-        !settings.contentCalendarPro;
 
     if (_loading) {
       return const Center(child: CircularProgressIndicator(strokeWidth: 2));
@@ -87,18 +101,48 @@ class _SettingsPlansPageState extends State<SettingsPlansPage> {
       );
     }
 
-    final catalog = _catalog!;
-
     return RefreshIndicator(
       onRefresh: () => _loadCatalog(refreshEntitlements: true),
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
         children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Subscription',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Refresh',
+                onPressed: _refreshing
+                    ? null
+                    : () {
+                        AppHaptics.tap();
+                        _loadCatalog(refreshEntitlements: true);
+                      },
+                icon: _refreshing
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh_rounded),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
           _SubscriptionHeader(
-            currentTier: currentTier,
+            planLabel: VoltisPlanTierX.displayLabel(
+              contentCalendarPro: settings.contentCalendarPro,
+              planTier: settings.planTier,
+              catalog: _catalog,
+            ),
             email: settings.accountEmail,
-            appName: catalog.appName,
-            storeProActive: storePro,
+            appName: _catalog!.appName,
           ),
           const SizedBox(height: 16),
           const _ExternalBillingNotice(),
@@ -111,20 +155,20 @@ class _SettingsPlansPageState extends State<SettingsPlansPage> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Three ways to get Pro: 3 months (£11.99), 6 months (£29.99), or '
-            'Forever (£79.99) on Voltiscore. Tap a paid plan to open checkout '
-            'in your browser - desktop does not process payments.',
+            'Prices are shown for reference. Tap a plan to open the '
+            'Voltiscore portal in your browser - this app does not '
+            'process payments.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                   height: 1.4,
                 ),
           ),
           const SizedBox(height: 16),
-          for (final plan in catalog.plans)
+          for (final plan in _catalog!.plans)
             _PlanCard(
               plan: plan,
-              isCurrent: currentTier == plan.tier,
-              onSelect: plan.isFree || currentTier == plan.tier
+              isCurrent: _isPlanCurrent(plan, settings),
+              onSelect: plan.isFree || _isPlanCurrent(plan, settings)
                   ? null
                   : () {
                       AppHaptics.tap();
@@ -132,15 +176,7 @@ class _SettingsPlansPageState extends State<SettingsPlansPage> {
                     },
             ),
           const SizedBox(height: 8),
-          if (_refreshing)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.only(top: 8),
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
-          const SizedBox(height: 8),
-          const _StoreBillingNote(),
+          const _AppStoreBillingDisclaimer(),
         ],
       ),
     );
@@ -149,16 +185,14 @@ class _SettingsPlansPageState extends State<SettingsPlansPage> {
 
 class _SubscriptionHeader extends StatelessWidget {
   const _SubscriptionHeader({
-    required this.currentTier,
+    required this.planLabel,
     required this.appName,
     this.email,
-    this.storeProActive = false,
   });
 
-  final VoltisPlanTier currentTier;
+  final String planLabel;
   final String appName;
   final String? email;
-  final bool storeProActive;
 
   @override
   Widget build(BuildContext context) {
@@ -184,7 +218,7 @@ class _SubscriptionHeader extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            storeProActive ? 'Pro (App Store)' : currentTier.label,
+            planLabel,
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.w700,
             ),
@@ -427,9 +461,9 @@ class _ExternalBillingNotice extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             'Paid plans are purchased on the Voltis Core portal at '
-            'voltislabs.uk/voltiscore - not in this desktop app. After checkout, '
-            'return here and pull to refresh (or use Refresh plan status in '
-            'Voltis Core Account).',
+            'voltislabs.uk/voltiscore - not in this app and not through '
+            'the App Store. After checkout, return here and tap refresh '
+            'to sync your plan.',
             style: theme.textTheme.bodySmall?.copyWith(
               color: scheme.onSurfaceVariant,
               height: 1.45,
@@ -441,15 +475,16 @@ class _ExternalBillingNotice extends StatelessWidget {
   }
 }
 
-class _StoreBillingNote extends StatelessWidget {
-  const _StoreBillingNote();
+class _AppStoreBillingDisclaimer extends StatelessWidget {
+  const _AppStoreBillingDisclaimer();
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Text(
-      'On iOS you can also subscribe through the App Store. Desktop and Android '
-      'use Voltiscore for paid plans.',
+      'Content Calendar does not offer in-app purchases. Any payment for '
+      'a subscription or lifetime plan is handled entirely on the Voltis '
+      'Core website. Apple is not involved in those transactions.',
       textAlign: TextAlign.center,
       style: theme.textTheme.labelSmall?.copyWith(
         color: theme.colorScheme.onSurfaceVariant,

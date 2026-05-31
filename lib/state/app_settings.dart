@@ -3,7 +3,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/voltis_plan.dart';
 import '../services/subscription_service.dart';
-import '../services/voltis_core_service.dart';
 
 /// Persisted account + Voltis Core entitlement state for UI.
 class AppSettings extends ChangeNotifier {
@@ -32,6 +31,12 @@ class AppSettings extends ChangeNotifier {
   VoltisPlanTier get planTier =>
       VoltisPlanTierX.fromApiValue(_prefs.getString(_kPlanTier));
 
+  /// Label for UI — Pro from Voltiscore even when plan id is not set yet.
+  String get planLabel => VoltisPlanTierX.displayLabel(
+        contentCalendarPro: contentCalendarPro,
+        planTier: planTier,
+      );
+
   Future<void> setContentCalendarPro(bool value) async {
     await _prefs.setBool(_kContentCalendarPro, value);
     notifyListeners();
@@ -54,6 +59,16 @@ class AppSettings extends ChangeNotifier {
     }
     notifyListeners();
   }
+
+  Future<void> syncFromVoltis({
+    required bool contentCalendarPro,
+    required VoltisPlanTier planTier,
+  }) async {
+    await setContentCalendarPro(contentCalendarPro);
+    await setPlanTier(planTier);
+    await SubscriptionService.instance
+        .setCoreProEntitlement(contentCalendarPro);
+  }
 }
 
 class AppSettingsScope extends InheritedNotifier<AppSettings> {
@@ -75,17 +90,4 @@ class AppSettingsScope extends InheritedNotifier<AppSettings> {
     assert(scope != null, 'No AppSettingsScope found in widget tree');
     return scope!.notifier!;
   }
-}
-
-/// Sync Voltis Core session into [AppSettings] and [SubscriptionService].
-Future<void> applyVoltisSessionToApp(AppSettings settings) async {
-  final voltis = VoltisCoreService.instance;
-  final email = voltis.email;
-  if (email != null) {
-    await settings.setAccountEmail(email);
-  }
-  await settings.setContentCalendarPro(voltis.contentCalendarPro);
-  await settings.setPlanTier(voltis.planTier);
-  await SubscriptionService.instance
-      .setCoreProEntitlement(voltis.contentCalendarPro);
 }

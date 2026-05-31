@@ -10,31 +10,52 @@ extension VoltisPlanTierX on VoltisPlanTier {
   String get label => switch (this) {
         VoltisPlanTier.free => 'Free',
         VoltisPlanTier.quarterly => '3 months',
-        VoltisPlanTier.sixMonths => '6 months',
-        VoltisPlanTier.lifetime => 'Forever',
+        VoltisPlanTier.sixMonths => 'Yearly',
+        VoltisPlanTier.lifetime => 'Lifetime',
       };
 
   /// Query param for Voltiscore checkout (`?plan=…`).
   String get checkoutId => switch (this) {
         VoltisPlanTier.free => 'free',
         VoltisPlanTier.quarterly => 'quarterly',
-        VoltisPlanTier.sixMonths => 'six_months',
+        VoltisPlanTier.sixMonths => 'yearly',
         VoltisPlanTier.lifetime => 'lifetime',
       };
 
   bool get isPaid => this != VoltisPlanTier.free;
+
+  /// Prefer [catalog] plan names (Voltiscore) so the header matches plan cards.
+  static String displayLabel({
+    required bool contentCalendarPro,
+    required VoltisPlanTier planTier,
+    VoltisPlansCatalog? catalog,
+  }) {
+    if (catalog != null) {
+      for (final plan in catalog.plans) {
+        final isCurrent = !contentCalendarPro
+            ? plan.tier == VoltisPlanTier.free
+            : planTier.isPaid && planTier == plan.tier;
+        if (isCurrent) return plan.name;
+      }
+    }
+    if (contentCalendarPro && !planTier.isPaid) return 'Pro';
+    return planTier.label;
+  }
 
   static VoltisPlanTier fromApiValue(String? raw) {
     switch (raw?.trim().toLowerCase()) {
       case 'quarterly':
       case '3_months':
       case '3months':
+      case 'content_calendar_3_months':
         return VoltisPlanTier.quarterly;
+      case 'sixmonths':
       case 'six_months':
       case '6_months':
       case '6months':
       case 'semiannual':
       case 'biannual':
+      case 'content_calendar_yearly':
         return VoltisPlanTier.sixMonths;
       case 'annual':
       case 'yearly':
@@ -43,6 +64,7 @@ extension VoltisPlanTierX on VoltisPlanTier {
       case 'lifetime':
       case 'forever':
       case 'own':
+      case 'content_calendar_lifetime':
         return VoltisPlanTier.lifetime;
       case 'free':
       case null:
