@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../screens/auth/sign_in_screen.dart';
 import '../models/voltis_plan.dart';
-import '../services/subscription_service.dart';
 import '../services/voltis_core_service.dart';
 import '../state/app_settings.dart';
 import '../utils/app_haptics.dart';
@@ -21,13 +20,29 @@ class _SettingsAccountPageState extends State<SettingsAccountPage> {
   bool _busy = false;
   final _voltis = VoltisCoreService.instance;
 
+  Future<void> _applySession(AppSettings settings) async {
+    final email = _voltis.email;
+    if (email != null) {
+      await settings.setAccountEmail(email);
+    }
+    await settings.syncFromVoltis(
+      contentCalendarPro: _voltis.contentCalendarPro,
+      planTier: _voltis.planTier,
+    );
+  }
+
   Future<void> _refreshEntitlements(AppSettings settings) async {
     if (!_voltis.isSignedIn) return;
     setState(() => _busy = true);
     try {
       await _voltis.refreshEntitlements();
-      await applyVoltisSessionToApp(settings);
-      _snack('Plan: ${settings.planTier.label}');
+      await _applySession(settings);
+      final err = _voltis.lastEntitlementsError;
+      if (err != null) {
+        _snack(err);
+      } else {
+        _snack('Plan: ${settings.planLabel}');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -38,9 +53,10 @@ class _SettingsAccountPageState extends State<SettingsAccountPage> {
     try {
       await _voltis.signOut();
       await settings.setAccountEmail(null);
-      await settings.setContentCalendarPro(false);
-      await settings.setPlanTier(VoltisPlanTier.free);
-      await SubscriptionService.instance.setCoreProEntitlement(false);
+      await settings.syncFromVoltis(
+        contentCalendarPro: false,
+        planTier: VoltisPlanTier.free,
+      );
       _snack('Signed out');
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -65,98 +81,92 @@ class _SettingsAccountPageState extends State<SettingsAccountPage> {
     final settings = AppSettingsScope.of(context);
     final email = settings.accountEmail;
 
-    return ListenableBuilder(
-      listenable: Listenable.merge([settings, SubscriptionService.instance]),
-      builder: (context, _) {
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-          children: [
-            _ProfileCard(
-              email: email,
-              planLabel: settings.planTier.label,
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+      children: [
+        _ProfileCard(
+          email: email,
+          planLabel: settings.planLabel,
+        ),
+        const SizedBox(height: 18),
+        if (email == null) ...[
+          Text(
+            'SIGN IN',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+              letterSpacing: 1.4,
+              fontWeight: FontWeight.w700,
             ),
-            const SizedBox(height: 18),
-            if (email == null) ...[
-              Text(
-                'SIGN IN',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
-                  letterSpacing: 1.4,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Card(
-                clipBehavior: Clip.antiAlias,
-                child: ListTile(
-                  leading: const Icon(Icons.alternate_email_rounded),
-                  title: const Text('Sign in with email'),
-                  subtitle: const Text('Voltis Core account (Supabase)'),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: _busy ? null : _openEmailSignIn,
-                ),
-              ),
-            ] else ...[
-              Text(
-                'SESSION',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
-                  letterSpacing: 1.4,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Card(
-                clipBehavior: Clip.antiAlias,
-                child: Column(
-                  children: [
-                    ListTile(
-                      leading: const Icon(Icons.verified_user_rounded),
-                      title: Text(email),
-                      subtitle: Text(
-                        '${settings.planTier.label} plan · synced from Voltis Core',
-                      ),
-                    ),
-                    if (widget.onOpenPlans != null) ...[
-                      const Divider(height: 0),
-                      ListTile(
-                        leading: const Icon(Icons.workspace_premium_rounded),
-                        title: const Text('Plans'),
-                        subtitle: const Text(
-                          'View plans and open Voltiscore checkout',
-                        ),
-                        trailing: const Icon(Icons.chevron_right_rounded),
-                        onTap: _busy ? null : widget.onOpenPlans,
-                      ),
-                    ],
-                    const Divider(height: 0),
-                    ListTile(
-                      leading: const Icon(Icons.refresh_rounded),
-                      title: const Text('Refresh plan status'),
-                      onTap:
-                          _busy ? null : () => _refreshEntitlements(settings),
-                    ),
-                    const Divider(height: 0),
-                    ListTile(
-                      leading: const Icon(Icons.logout_rounded),
-                      title: const Text('Sign out'),
-                      onTap: _busy ? null : () => _signOut(settings),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            const SizedBox(height: 18),
-            Text(
-              'Content Calendar never uploads your posts to our servers. Voltis Core only handles sign-in and optional Pro entitlements.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
-                height: 1.4,
-              ),
+          ),
+          const SizedBox(height: 8),
+          Card(
+            clipBehavior: Clip.antiAlias,
+            child: ListTile(
+              leading: const Icon(Icons.alternate_email_rounded),
+              title: const Text('Sign in with email'),
+              subtitle: const Text('Voltis Core account (Supabase)'),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: _busy ? null : _openEmailSignIn,
             ),
-          ],
-        );
-      },
+          ),
+        ] else ...[
+          Text(
+            'SESSION',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+              letterSpacing: 1.4,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Card(
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.verified_user_rounded),
+                  title: Text(email),
+                  subtitle: Text(
+                    '${settings.planLabel} · synced from Voltiscore',
+                  ),
+                ),
+                if (widget.onOpenPlans != null) ...[
+                  const Divider(height: 0),
+                  ListTile(
+                    leading: const Icon(Icons.workspace_premium_rounded),
+                    title: const Text('Plans'),
+                    subtitle: const Text(
+                      'View plans and open Voltiscore checkout',
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: _busy ? null : widget.onOpenPlans,
+                  ),
+                ],
+                const Divider(height: 0),
+                ListTile(
+                  leading: const Icon(Icons.refresh_rounded),
+                  title: const Text('Refresh plan status'),
+                  onTap: _busy ? null : () => _refreshEntitlements(settings),
+                ),
+                const Divider(height: 0),
+                ListTile(
+                  leading: const Icon(Icons.logout_rounded),
+                  title: const Text('Sign out'),
+                  onTap: _busy ? null : () => _signOut(settings),
+                ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 18),
+        Text(
+          'Content Calendar never uploads your posts to our servers. Voltis Core only handles sign-in and optional Pro entitlements.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+            height: 1.4,
+          ),
+        ),
+      ],
     );
   }
 }

@@ -26,6 +26,7 @@ class VoltisCoreService {
   bool _initialized = false;
   bool contentCalendarPro = false;
   VoltisPlanTier planTier = VoltisPlanTier.free;
+  String? lastEntitlementsError;
   String? _accessToken;
   String? _refreshToken;
   String? _email;
@@ -62,9 +63,19 @@ class VoltisCoreService {
     await prefs.setString(_kEmail, email);
   }
 
+  Future<void> restoreCachedEntitlements(SharedPreferences prefs) async {
+    contentCalendarPro =
+        prefs.getBool('content_calendar.contentCalendarPro') ?? false;
+    planTier = VoltisPlanTierX.fromApiValue(
+      prefs.getString('content_calendar.planTier'),
+    );
+  }
+
   Future<void> syncFromSession() async {
     if (!isSignedIn) {
       contentCalendarPro = false;
+      planTier = VoltisPlanTier.free;
+      lastEntitlementsError = null;
       return;
     }
     await refreshEntitlements();
@@ -181,6 +192,7 @@ class VoltisCoreService {
   Future<void> signOut() async {
     contentCalendarPro = false;
     planTier = VoltisPlanTier.free;
+    lastEntitlementsError = null;
     _accessToken = null;
     _refreshToken = null;
     _email = null;
@@ -197,18 +209,21 @@ class VoltisCoreService {
     }
   }
 
+  /// Fetches Pro + plan from Voltiscore. On failure, keeps the last known values.
   Future<bool> refreshEntitlements() async {
-    contentCalendarPro = false;
-    planTier = VoltisPlanTier.free;
+    lastEntitlementsError = null;
     final token = accessToken;
-    if (token == null || token.isEmpty) return false;
+    if (token == null || token.isEmpty) {
+      lastEntitlementsError = 'Not signed in to Voltis Core.';
+      return false;
+    }
 
     final uri = Uri.parse(
       '${VoltisCoreConfig.voltisCoreUrl}/entitlements',
     ).replace(queryParameters: {'app_id': VoltisCoreConfig.appId});
 
     try {
-      final response = await http.get(
+      var response = await http.get(
         uri,
         headers: {
           'Authorization': 'Bearer $token',
@@ -217,26 +232,48 @@ class VoltisCoreService {
       );
       if (response.statusCode == 401 && _refreshToken != null) {
         final renewed = await _tryRefreshSession();
-        if (renewed) return refreshEntitlements();
-      }
-      if (response.statusCode != 200) return false;
-      final body = jsonDecode(response.body);
-      if (body is Map<String, dynamic>) {
-        contentCalendarPro = body['content_calendar_pro'] == true;
-        planTier = VoltisPlanTierX.fromApiValue(
-          body['content_calendar_plan'] as String? ??
-              body['plan'] as String? ??
-              (contentCalendarPro ? 'six_months' : 'free'),
-        );
-        if (!contentCalendarPro && planTier.isPaid) {
-          contentCalendarPro = true;
+        if (renewed) {
+          response = await http.get(
+            uri,
+            headers: {
+              'Authorization': 'Bearer $accessToken',
+              'Accept': 'application/json',
+            },
+          );
         }
-        return contentCalendarPro;
       }
+
+      if (response.statusCode == 401) {
+        lastEntitlementsError =
+            'Voltis Core session expired. Sign out and sign in again.';
+        return false;
+      }
+      if (response.statusCode != 200) {
+        lastEntitlementsError =
+            'Voltiscore returned ${response.statusCode}. Try again.';
+        return false;
+      }
+
+      final body = jsonDecode(response.body);
+      if (body is! Map<String, dynamic>) {
+        lastEntitlementsError = 'Invalid response from Voltiscore.';
+        return false;
+      }
+
+      contentCalendarPro = body['content_calendar_pro'] == true;
+      final planRaw = body['content_calendar_plan'] as String? ??
+          body['plan'] as String?;
+      if (planRaw != null && planRaw.trim().isNotEmpty) {
+        planTier = VoltisPlanTierX.fromApiValue(planRaw);
+      } else {
+        planTier = VoltisPlanTier.free;
+      }
+      return contentCalendarPro;
     } on Object {
+      lastEntitlementsError =
+          'Could not reach Voltiscore. Check your connection.';
       return false;
     }
-    return false;
   }
 
   Future<bool> _tryRefreshSession() async {
@@ -264,7 +301,6 @@ class VoltisCoreService {
       );
       return true;
     } on Object {
-      await signOut();
       return false;
     }
   }

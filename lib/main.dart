@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'screens/auth_gate.dart';
 import 'screens/voltis_splash_screen.dart';
@@ -36,8 +37,18 @@ Future<void> main() async {
   final settings = await AppSettings.load();
   await VoltisCoreService.instance.initialize();
   if (VoltisCoreService.instance.isSignedIn) {
-    await VoltisCoreService.instance.syncFromSession();
-    await applyVoltisSessionToApp(settings);
+    final voltis = VoltisCoreService.instance;
+    final prefs = await SharedPreferences.getInstance();
+    await voltis.restoreCachedEntitlements(prefs);
+    await voltis.syncFromSession();
+    final email = voltis.email;
+    if (email != null) {
+      await settings.setAccountEmail(email);
+    }
+    await settings.syncFromVoltis(
+      contentCalendarPro: voltis.contentCalendarPro,
+      planTier: voltis.planTier,
+    );
   } else if (settings.contentCalendarPro) {
     await SubscriptionService.instance
         .setCoreProEntitlement(settings.contentCalendarPro);

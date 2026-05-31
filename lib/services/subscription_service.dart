@@ -35,6 +35,8 @@ class SubscriptionService extends ChangeNotifier {
   bool get supportsNativeStore => !kIsWeb && Platform.isIOS;
   bool get storeAvailable => _storeAvailable;
   bool get isPro => _proEntitled || _coreProEntitled;
+  bool get hasAppStorePro => _proEntitled;
+  bool get hasVoltisCorePro => _coreProEntitled;
   bool get purchasePending => _purchasePending;
   ProductDetails? get proProduct => _proProduct;
   String? get lastError => _lastError;

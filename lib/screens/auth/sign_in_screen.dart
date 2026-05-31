@@ -44,7 +44,14 @@ class _SignInScreenState extends State<SignInScreen> {
   }
 
   Future<void> _onAuthSuccess(AppSettings settings, String message) async {
-    await applyVoltisSessionToApp(settings);
+    final email = _voltis.email;
+    if (email != null) {
+      await settings.setAccountEmail(email);
+    }
+    await settings.syncFromVoltis(
+      contentCalendarPro: _voltis.contentCalendarPro,
+      planTier: _voltis.planTier,
+    );
     if (!mounted) return;
     _snack(message);
     if (!widget.embeddedInGate && Navigator.of(context).canPop()) {

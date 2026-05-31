@@ -331,7 +331,8 @@ class _SettingsPlanBadgeState extends State<_SettingsPlanBadge> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isPro = _subscriptions.isPro;
+    final settings = AppSettingsScope.of(context);
+    final isPro = settings.contentCalendarPro || _subscriptions.isPro;
     final label = isPro ? 'Pro Plan' : 'Free Plan';
 
     return TextButton(
@@ -421,8 +422,8 @@ class _SettingsHomePageState extends State<_SettingsHomePage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isPro = _subscriptions.isPro;
     final account = AppSettingsScope.of(context);
+    final isPro = account.contentCalendarPro || _subscriptions.isPro;
 
     return _SettingsPageShell(
       title: 'Settings',
@@ -524,11 +525,7 @@ class _SettingsHomePageState extends State<_SettingsHomePage> {
   }
 
   String _plansSubtitle(AppSettings account) {
-    final tier = account.planTier;
-    final pro = _subscriptions.isPro;
-    if (pro && tier.isPaid) return '${tier.label} · Pro active';
-    if (pro) return 'Pro active · App Store or Voltis Core';
-    return 'Free · view plans on Voltiscore';
+    return '${account.planLabel} · Voltiscore';
   }
 
   Widget _navTile({
