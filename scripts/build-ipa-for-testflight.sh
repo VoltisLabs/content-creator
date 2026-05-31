@@ -125,9 +125,11 @@ echo ""
 export PATH="$HOME/flutter/bin:$PATH"
 cd "${PROJECT_ROOT}"
 
-if [[ "${UPLOAD}" == true ]]; then
+if [[ "${UPLOAD}" == true && "${SKIP_FLUTTER_CLEAN:-}" != "1" ]]; then
   echo "🧹 Full clean before release upload (prevents stale Dart / parallel-build cache)..."
   flutter clean
+elif [[ "${UPLOAD}" == true ]]; then
+  echo "ℹ️ Skipping flutter clean (SKIP_FLUTTER_CLEAN=1)."
 fi
 
 flutter pub get
