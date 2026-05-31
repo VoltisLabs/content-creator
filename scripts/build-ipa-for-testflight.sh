@@ -198,48 +198,27 @@ fi
 echo ""
 echo "Step 3: Uploading to TestFlight..."
 
-CREDENTIALS=""
-CREDS_FILE="${PROJECT_ROOT}/scripts/testflight-credentials.json"
-API_CREDS_FILE="${PROJECT_ROOT}/scripts/testflight-api-key.json"
-NOTEPAD_CREDS="${PROJECT_ROOT}/../notepad-pro/scripts/testflight-credentials.json"
-CLIPSTACK_CREDS="${PROJECT_ROOT}/../clipstack/frontend/scripts/testflight-credentials.json"
-PRELURA_SWIFT_CREDS="${PROJECT_ROOT}/../prelura/prelura-swift/frontend/scripts/testflight-credentials.json"
-
-if [[ -f "${CREDS_FILE}" ]]; then
-  CREDENTIALS="$(<"${CREDS_FILE}")"
-  echo "Using credentials from scripts/testflight-credentials.json"
-elif [[ -f "${NOTEPAD_CREDS}" ]]; then
-  CREDS_FILE="${NOTEPAD_CREDS}"
-  CREDENTIALS="$(<"${CREDS_FILE}")"
-  echo "Using credentials from ../notepad-pro/scripts/testflight-credentials.json"
-elif [[ -f "${CLIPSTACK_CREDS}" ]]; then
-  CREDS_FILE="${CLIPSTACK_CREDS}"
-  CREDENTIALS="$(<"${CREDS_FILE}")"
-  echo "Using credentials from ../clipstack/frontend/scripts/testflight-credentials.json"
-elif [[ -f "${PRELURA_SWIFT_CREDS}" ]]; then
-  CREDS_FILE="${PRELURA_SWIFT_CREDS}"
-  CREDENTIALS="$(<"${CREDS_FILE}")"
-  echo "Using credentials from ../prelura/prelura-swift/frontend/scripts/testflight-credentials.json"
-fi
-
-if [[ -z "${CREDENTIALS}" ]]; then
-  CREDENTIALS="$(security find-generic-password -s "AC_PASSWORD" -a "clipstack" -w 2>/dev/null || true)"
-fi
-if [[ -z "${CREDENTIALS}" ]]; then
-  CREDENTIALS="$(security find-generic-password -s "AC_PASSWORD" -a "Prelura-swift" -w 2>/dev/null || true)"
-fi
-
-if [[ -z "${CREDENTIALS}" ]]; then
-  echo "❌ No credentials found."
-  echo "   Copy scripts/testflight-credentials.json.example → scripts/testflight-credentials.json"
+# Prefer shared API key (AuthKey_B3SJX8QWUX.p8) over Apple ID password.
+RESOLVE_CREDS="$(python3 - <<'FINDPY'
+from pathlib import Path
+root = Path("${PROJECT_ROOT}").resolve()
+for _ in range(8):
+    for rel in ("shared/resolve-testflight-creds.sh", "Voltis labs/shared/resolve-testflight-creds.sh"):
+        p = root / rel
+        if p.is_file():
+            print(p)
+            raise SystemExit(0)
+    if root.parent == root:
+        break
+    root = root.parent
+FINDPY
+)"
+if [[ -z "${RESOLVE_CREDS}" || ! -f "${RESOLVE_CREDS}" ]]; then
+  echo "Missing Voltis shared/resolve-testflight-creds.sh"
   exit 1
 fi
-
-METHOD="$(printf '%s' "${CREDENTIALS}" | python3 -c 'import sys, json; print(json.load(sys.stdin).get("method",""))' 2>/dev/null || true)"
-if [[ -z "${METHOD}" ]]; then
-  echo "❌ Credentials JSON missing method field."
-  exit 1
-fi
+# shellcheck source=/dev/null
+source "${RESOLVE_CREDS}"
 
 PKG_INFO="$(mktemp /tmp/contentcalendar-ipa-plist.XXXXXX)"
 unzip -p "${IPA_PATH}" "Payload/Runner.app/Info.plist" >"${PKG_INFO}"
